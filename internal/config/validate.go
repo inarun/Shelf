@@ -1,0 +1,203 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+// ValidationError aggregates every broken field from a single Validate call
+// so the user sees all problems at once rather than fixing them one at a
+// time. Errors is non-empty whenever Error() is non-nil.
+type ValidationError struct {
+	Errors []string
+}
+
+func (v *ValidationError) Error() string {
+	if len(v.Errors) == 0 {
+		return "config: no errors" // should not happen when returned non-nil
+	}
+	if len(v.Errors) == 1 {
+		return "config: " + v.Errors[0]
+	}
+	return "config: " + strconv.Itoa(len(v.Errors)) + " validation errors:\n - " + strings.Join(v.Errors, "\n - ")
+}
+
+// Validate checks every field for correctness. It creates Data.Directory
+// when absent (portable-mode first run) and proves writability by dropping
+// and removing a marker file. All failures are collected into a single
+// ValidationError so the user gets the full picture.
+//
+// External bind addresses do not produce an error here; callers should
+// check IsExternalBind separately and log a warning per SKILL.md §Core
+// Invariant #4.
+func (c *Config) Validate() error {
+	ve := &ValidationError{}
+
+	validateVault(c, ve)
+	validateData(c, ve)
+	validateServer(c, ve)
+	validateProviders(c, ve)
+
+	if len(ve.Errors) > 0 {
+		return ve
+	}
+	return nil
+}
+
+// IsExternalBind reports whether Server.Bind is something other than a
+// loopback address. Main should log a warning when this is true.
+func (c *Config) IsExternalBind() bool {
+	switch strings.ToLower(c.Server.Bind) {
+	case "", "127.0.0.1", "localhost", "::1":
+		return false
+	default:
+		return true
+	}
+}
+
+func validateVault(c *Config, ve *ValidationError) {
+	switch {
+	case c.Vault.Path == "":
+		ve.push("vault.path is required")
+	case !filepath.IsAbs(c.Vault.Path):
+		ve.pushf("vault.path must be absolute, got %q", c.Vault.Path)
+	default:
+		info, err := os.Stat(c.Vault.Path)
+		if err != nil {
+			ve.pushf("vault.path %q: %v", c.Vault.Path, err)
+		} else if !info.IsDir() {
+			ve.pushf("vault.path %q is not a directory", c.Vault.Path)
+		}
+	}
+
+	if err := validateRelativeBooksFolder(c.Vault.BooksFolder); err != nil {
+		ve.pushf("vault.books_folder: %v", err)
+		return
+	}
+	if c.Vault.Path == "" || !filepath.IsAbs(c.Vault.Path) {
+		return // no point resolving if vault.path is broken
+	}
+	abs := filepath.Join(c.Vault.Path, c.Vault.BooksFolder)
+	info, err := os.Stat(abs)
+	if err != nil {
+		ve.pushf("vault.books_folder resolves to %q: %v", abs, err)
+		return
+	}
+	if !info.IsDir() {
+		ve.pushf("vault.books_folder resolves to %q which is not a directory", abs)
+	}
+}
+
+func validateData(c *Config, ve *ValidationError) {
+	switch {
+	case c.Data.Directory == "":
+		ve.push("data.directory is empty after defaults — BinaryDir() failed")
+	case !filepath.IsAbs(c.Data.Directory):
+		ve.pushf("data.directory must be absolute, got %q", c.Data.Directory)
+	default:
+		if err := os.MkdirAll(c.Data.Directory, 0o700); err != nil {
+			ve.pushf("data.directory %q: cannot create: %v", c.Data.Directory, err)
+			return
+		}
+		if err := probeWritable(c.Data.Directory); err != nil {
+			ve.push(portableNotWritableError(c.Data.Directory, err))
+		}
+	}
+}
+
+func validateServer(c *Config, ve *ValidationError) {
+	if c.Server.Port < 1 || c.Server.Port > 65535 {
+		ve.pushf("server.port %d out of range 1..65535", c.Server.Port)
+		return
+	}
+	addr := net.JoinHostPort(c.Server.Bind, strconv.Itoa(c.Server.Port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		ve.pushf("server.port: %s unavailable: %v", addr, err)
+		return
+	}
+	_ = ln.Close()
+}
+
+func validateProviders(c *Config, ve *ValidationError) {
+	if c.Providers.OpenLibrary.Enabled && c.Providers.OpenLibrary.CacheTTLDays < 1 {
+		ve.pushf("providers.openlibrary.cache_ttl_days %d must be >= 1 when enabled",
+			c.Providers.OpenLibrary.CacheTTLDays)
+	}
+}
+
+// validateRelativeBooksFolder enforces that books_folder is a safe
+// vault-relative path. This is a config-time check; the full runtime
+// validation (symlink escape, reserved Windows names) lives in
+// internal/vault/paths and runs on every filesystem operation.
+func validateRelativeBooksFolder(rel string) error {
+	if rel == "" {
+		return errors.New("required")
+	}
+	if strings.ContainsRune(rel, 0) {
+		return errors.New("contains a null byte")
+	}
+	// UNC prefix first (caught before the generic leading-separator check
+	// so the error message names UNC specifically).
+	if strings.HasPrefix(rel, `\\`) || strings.HasPrefix(rel, "//") {
+		return fmt.Errorf("must not be a UNC path, got %q", rel)
+	}
+	// Leading path separator ("/foo" or "\foo" on Windows means root of
+	// current drive; on POSIX, absolute) — reject as not vault-relative.
+	if strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, `\`) {
+		return fmt.Errorf("must be vault-relative, got root-like path %q", rel)
+	}
+	// Windows drive-letter sneak ("D:other").
+	if len(rel) >= 2 && rel[1] == ':' {
+		return fmt.Errorf("must not include a drive letter, got %q", rel)
+	}
+	// Remaining absolute forms (Go's filepath.IsAbs on this platform).
+	if filepath.IsAbs(rel) {
+		return fmt.Errorf("must be vault-relative, got absolute path %q", rel)
+	}
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("must not escape the vault with .., got %q", rel)
+	}
+	return nil
+}
+
+func probeWritable(dir string) error {
+	probe := filepath.Join(dir, ".shelf-writable-probe")
+	f, err := os.OpenFile(probe, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write([]byte("probe")); err != nil {
+		_ = f.Close()
+		_ = os.Remove(probe)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(probe)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(probe)
+		return err
+	}
+	return os.Remove(probe)
+}
+
+func portableNotWritableError(dir string, underlying error) string {
+	return fmt.Sprintf(
+		"data.directory %q is not writable (%v). Shelf runs in portable mode by default, which "+
+			"stores shelf.db, covers/, backups/, and logs/ next to the binary. Either move the "+
+			"binary to a user-writable location, or set data.directory in shelf.toml to an explicit "+
+			"absolute path on a writable volume.",
+		dir, underlying)
+}
+
+func (v *ValidationError) push(s string)                   { v.Errors = append(v.Errors, s) }
+func (v *ValidationError) pushf(format string, a ...any) { v.Errors = append(v.Errors, fmt.Sprintf(format, a...)) }
