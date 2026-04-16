@@ -20,8 +20,14 @@ all: lint-all test build
 build:
 	$(GO) build -o $(BIN_EXE) ./cmd/shelf
 
+# Default `test` skips -race because on Windows the race detector requires cgo
+# and a C compiler (not bundled with Go). `test-race` enables both, which is
+# worth running before concurrency-sensitive commits (e.g., internal/vault/atomic).
 test:
-	$(GO) test -race -count=1 $(PKGS)
+	$(GO) test -count=1 $(PKGS)
+
+test-race:
+	CGO_ENABLED=1 $(GO) test -race -count=1 $(PKGS)
 
 vet:
 	$(GO) vet $(PKGS)
