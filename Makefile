@@ -9,9 +9,9 @@ BIN          := shelf
 BIN_EXE      := $(BIN).exe
 PKGS         := ./...
 
-STATICCHECK  := honnef.co/go/tools/cmd/staticcheck@v0.5.1
-GOSEC        := github.com/securego/gosec/v2/cmd/gosec@v2.21.4
-GOVULNCHECK  := golang.org/x/vuln/cmd/govulncheck@v1.1.4
+STATICCHECK  := honnef.co/go/tools/cmd/staticcheck@v0.7.0
+GOSEC        := github.com/securego/gosec/v2/cmd/gosec@latest
+GOVULNCHECK  := golang.org/x/vuln/cmd/govulncheck@latest
 
 .PHONY: all build test vet staticcheck gosec govulncheck lint-all fmt tidy clean
 

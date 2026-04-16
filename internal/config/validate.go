@@ -134,6 +134,9 @@ func validateProviders(c *Config, ve *ValidationError) {
 
 func probeWritable(dir string) error {
 	probe := filepath.Join(dir, ".shelf-writable-probe")
+	// #nosec G304 -- `probe` is rooted in the config-validated data.directory
+	// and uses a constant marker filename. The file is immediately removed
+	// after a successful write; purpose is to prove writability at startup.
 	f, err := os.OpenFile(probe, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err

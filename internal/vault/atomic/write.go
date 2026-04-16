@@ -40,6 +40,10 @@ func Write(path string, data []byte, perm os.FileMode) error {
 	tmpName := fmt.Sprintf(".%s.%s.shelf.tmp", base, hex.EncodeToString(randBytes[:]))
 	tmpPath := filepath.Join(dir, tmpName)
 
+	// #nosec G304 -- tmpPath is constructed from the pre-validated `path`
+	// argument (callers run internal/vault/paths.ValidateWithinVault first).
+	// Path validation is intentionally done at the API boundary, not inside
+	// every writer; see the package doc.
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, perm)
 	if err != nil {
 		return fmt.Errorf("atomic: create temp %s: %w", tmpPath, err)
