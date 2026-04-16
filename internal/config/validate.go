@@ -1,13 +1,14 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/inarun/Shelf/internal/vault/paths"
 )
 
 // ValidationError aggregates every broken field from a single Validate call
@@ -75,7 +76,7 @@ func validateVault(c *Config, ve *ValidationError) {
 		}
 	}
 
-	if err := validateRelativeBooksFolder(c.Vault.BooksFolder); err != nil {
+	if err := paths.ValidateRelativeBooksFolder(c.Vault.BooksFolder); err != nil {
 		ve.pushf("vault.books_folder: %v", err)
 		return
 	}
@@ -129,42 +130,6 @@ func validateProviders(c *Config, ve *ValidationError) {
 		ve.pushf("providers.openlibrary.cache_ttl_days %d must be >= 1 when enabled",
 			c.Providers.OpenLibrary.CacheTTLDays)
 	}
-}
-
-// validateRelativeBooksFolder enforces that books_folder is a safe
-// vault-relative path. This is a config-time check; the full runtime
-// validation (symlink escape, reserved Windows names) lives in
-// internal/vault/paths and runs on every filesystem operation.
-func validateRelativeBooksFolder(rel string) error {
-	if rel == "" {
-		return errors.New("required")
-	}
-	if strings.ContainsRune(rel, 0) {
-		return errors.New("contains a null byte")
-	}
-	// UNC prefix first (caught before the generic leading-separator check
-	// so the error message names UNC specifically).
-	if strings.HasPrefix(rel, `\\`) || strings.HasPrefix(rel, "//") {
-		return fmt.Errorf("must not be a UNC path, got %q", rel)
-	}
-	// Leading path separator ("/foo" or "\foo" on Windows means root of
-	// current drive; on POSIX, absolute) — reject as not vault-relative.
-	if strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, `\`) {
-		return fmt.Errorf("must be vault-relative, got root-like path %q", rel)
-	}
-	// Windows drive-letter sneak ("D:other").
-	if len(rel) >= 2 && rel[1] == ':' {
-		return fmt.Errorf("must not include a drive letter, got %q", rel)
-	}
-	// Remaining absolute forms (Go's filepath.IsAbs on this platform).
-	if filepath.IsAbs(rel) {
-		return fmt.Errorf("must be vault-relative, got absolute path %q", rel)
-	}
-	clean := filepath.ToSlash(filepath.Clean(rel))
-	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return fmt.Errorf("must not escape the vault with .., got %q", rel)
-	}
-	return nil
 }
 
 func probeWritable(dir string) error {
