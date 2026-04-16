@@ -1,0 +1,42 @@
+# Binary artifacts
+/shelf
+/shelf.exe
+*.exe
+
+# Portable-mode data artifacts (live next to the binary)
+/shelf.db
+/shelf.db-journal
+/shelf.db-wal
+/shelf.db-shm
+/covers/
+/backups/
+/logs/
+.shelf-writable-probe
+*.shelf.tmp
+.*.shelf.tmp
+
+# Local config (an example may be committed explicitly as shelf.example.toml)
+/shelf.toml
+
+# Real-vault test fixtures should never be committed
+/tests/fixtures/synthetic-vault/
+/tests/fixtures/real-sample*.md
+
+# Go
+/vendor/
+*.test
+*.out
+coverage.*
+
+# OS & editor junk
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/sessions/
+.claude/plans/
