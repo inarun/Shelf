@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-//go:embed app.css app.js favicon.svg manifest.webmanifest sw.js
+//go:embed app.css app.js favicon.svg icon-192.png icon-512.png manifest.webmanifest sw.js
 var assets embed.FS
 
 // FS returns the embedded asset filesystem rooted at the asset files
