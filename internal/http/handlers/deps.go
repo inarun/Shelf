@@ -9,16 +9,25 @@ import (
 	"html/template"
 	"log/slog"
 
+	"github.com/inarun/Shelf/internal/covers"
 	"github.com/inarun/Shelf/internal/index/store"
 	"github.com/inarun/Shelf/internal/index/sync"
+	"github.com/inarun/Shelf/internal/providers/metadata"
 )
 
 // Dependencies bundles the collaborators every handler needs. Wired
 // once by the server at startup and passed by value (it's pointer-heavy
 // internally) to each handler constructor.
+//
+// Metadata and Covers were added in Session 6 for the add-book flow and
+// cover caching respectively. Both are optional in principle (handlers
+// check for nil before dereferencing); in practice cmd/shelf always
+// wires them.
 type Dependencies struct {
 	Store       *store.Store
 	Syncer      *sync.Syncer
+	Metadata    metadata.Provider
+	Covers      *covers.Cache
 	BooksAbs    string
 	BackupsRoot string
 	DataDir     string
