@@ -96,6 +96,12 @@ func statusLabel(s string) string {
 // safeHref returns a URL-safe path-escaped link to /books/{filename}.
 // The returned type is template.URL so html/template does not double-
 // escape it; the input is filename-only, already validated upstream.
+//
+// #nosec G203 -- We deliberately bypass html/template's auto-escaping
+// for the href value because url.PathEscape has already encoded every
+// unsafe character. The input comes from store rows that were themselves
+// populated from vault filenames validated by internal/vault/paths;
+// attacker-controlled content cannot reach this function.
 func safeHref(filename string) template.URL {
 	return template.URL(fmt.Sprintf("/books/%s", url.PathEscape(filename)))
 }

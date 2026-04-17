@@ -129,6 +129,9 @@ func (d *Dependencies) ApplyImport(w http.ResponseWriter, r *http.Request) {
 // error — the caller should return immediately.
 func (d *Dependencies) parseCSVFromMultipart(w http.ResponseWriter, r *http.Request) ([]goodreads.Record, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxCSVBytes)
+	// #nosec G120 -- Body is capped via MaxBytesReader on the line above,
+	// so ParseMultipartForm cannot consume more than MaxCSVBytes. gosec
+	// flags the pattern on pattern match without seeing the cap.
 	if err := r.ParseMultipartForm(MaxCSVBytes); err != nil {
 		// Distinguish "too large" from "malformed".
 		var maxErr *http.MaxBytesError

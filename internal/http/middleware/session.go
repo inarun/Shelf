@@ -25,6 +25,13 @@ func Session(next http.Handler) http.Handler {
 		token := readSessionCookie(r)
 		if token == "" && isSafeMethod(r.Method) {
 			token = newSessionToken()
+			// #nosec G124 -- Secure=false is intentional: Shelf binds to
+			// localhost HTTP by design (SKILL.md §Core Invariants #4). The
+			// Secure flag would prevent the browser from sending the cookie
+			// over HTTP at all, breaking the one-user local app. HttpOnly +
+			// SameSite=Strict still defend against XSS exfiltration and
+			// cross-site requests; there is no network-attacker threat on a
+			// loopback socket.
 			http.SetCookie(w, &http.Cookie{
 				Name:     SessionCookieName,
 				Value:    token,
