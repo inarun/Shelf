@@ -333,3 +333,66 @@ func TestGet_NotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestGetBookByISBN_Found(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if _, err := s.UpsertBook(ctx, fixture("Hyperion by Dan Simmons.md")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetBookByISBN(ctx, "9780385249492")
+	if err != nil {
+		t.Fatalf("GetBookByISBN: %v", err)
+	}
+	if got.Filename != "Hyperion by Dan Simmons.md" {
+		t.Errorf("Filename got %q", got.Filename)
+	}
+	if len(got.Authors) != 1 || got.Authors[0] != "Dan Simmons" {
+		t.Errorf("Authors got %v", got.Authors)
+	}
+}
+
+func TestGetBookByISBN_NotFound(t *testing.T) {
+	s := openStore(t)
+	_, err := s.GetBookByISBN(context.Background(), "9999999999999")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGetBookByISBN_EmptyRejects(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	// A book with empty isbn should not match an empty-string query.
+	row := fixture("Hyperion by Dan Simmons.md")
+	row.ISBN = ""
+	if _, err := s.UpsertBook(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.GetBookByISBN(ctx, "")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound for empty ISBN query, got %v", err)
+	}
+}
+
+func TestGetBookByISBN_Ambiguous(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	// Two books sharing an ISBN — shouldn't happen in a healthy vault,
+	// but the schema doesn't enforce uniqueness, so the store must tolerate
+	// it and surface an unambiguous ErrAmbiguousISBN.
+	a := fixture("A by Author.md")
+	b := fixture("B by Author.md")
+	a.ISBN = "9780000000001"
+	b.ISBN = "9780000000001"
+	if _, err := s.UpsertBook(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertBook(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.GetBookByISBN(ctx, "9780000000001")
+	if !errors.Is(err, ErrAmbiguousISBN) {
+		t.Errorf("expected ErrAmbiguousISBN, got %v", err)
+	}
+}

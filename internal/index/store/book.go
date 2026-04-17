@@ -250,6 +250,67 @@ LEFT JOIN series s ON s.id = b.series_id
 WHERE b.filename = ?
 `
 
+// ErrAmbiguousISBN is returned by GetBookByISBN when more than one row
+// matches the queried ISBN. The caller should treat this as "cannot
+// decide automatically" and surface a conflict for user resolution —
+// Goodreads import specifically flags ambiguous-ISBN records as
+// conflicts rather than silently picking a row.
+var ErrAmbiguousISBN = errors.New("store: multiple books with same ISBN")
+
+// GetBookByISBN returns the book row whose ISBN column exactly equals
+// isbn (after caller normalization — the store does not strip hyphens or
+// whitespace). The empty string never matches any row.
+//
+// If two or more rows share the same ISBN, the function returns
+// ErrAmbiguousISBN — the caller (e.g., the Goodreads importer) should
+// treat that as a conflict. Returns ErrNotFound when no row matches.
+func (s *Store) GetBookByISBN(ctx context.Context, isbn string) (*BookRow, error) {
+	if isbn == "" {
+		return nil, ErrNotFound
+	}
+	rows, err := s.db.QueryContext(ctx, bookSelectByISBN, isbn)
+	if err != nil {
+		return nil, fmt.Errorf("store: query by isbn: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var first *BookRow
+	for rows.Next() {
+		br, err := scanBook(rows)
+		if err != nil {
+			return nil, err
+		}
+		if first != nil {
+			return nil, ErrAmbiguousISBN
+		}
+		first = br
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: isbn rows: %w", err)
+	}
+	if first == nil {
+		return nil, ErrNotFound
+	}
+	if err := s.loadJoined(ctx, first); err != nil {
+		return nil, err
+	}
+	return first, nil
+}
+
+const bookSelectByISBN = `
+SELECT
+    b.id, b.filename, b.canonical_name, b.title, b.subtitle, b.publisher,
+    b.publish_date, b.total_pages, b.isbn, b.cover, b.format, b.source,
+    b.rating, b.status, b.read_count, b.series_id, b.series_index,
+    b.started_json, b.finished_json, b.size_bytes, b.mtime_ns,
+    b.indexed_at_unix, b.warnings_json,
+    COALESCE(s.name, '')
+FROM books b
+LEFT JOIN series s ON s.id = b.series_id
+WHERE b.isbn = ? AND b.isbn != ''
+LIMIT 2
+`
+
 // DeleteBookByFilename removes a book. ON DELETE CASCADE tears down the
 // join-table rows; series/authors/categories rows survive, which is
 // intentional (users may want to ask "has Shelf ever seen this author"
