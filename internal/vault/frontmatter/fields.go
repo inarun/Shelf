@@ -41,6 +41,15 @@ var validStatus = map[string]bool{
 	"dnf":      true,
 }
 
+// Valid format values per SKILL.md §Frontmatter schema. Empty string is
+// allowed — the schema uses null/absent to mean "unspecified".
+var validFormat = map[string]bool{
+	"":          true,
+	"audiobook": true,
+	"ebook":     true,
+	"physical":  true,
+}
+
 // findValue returns the value node for key, or nil if not present.
 // MappingNode.Content is a flat [k1, v1, k2, v2, ...] slice.
 func (f *Frontmatter) findValue(key string) *yaml.Node {
@@ -104,6 +113,11 @@ func (f *Frontmatter) SetRawValue(key string, value *yaml.Node) {
 func (f *Frontmatter) getString(key string) string {
 	v := f.findValue(key)
 	if v == nil {
+		return ""
+	}
+	// A null-tagged scalar (written by a clear operation) should read back
+	// as empty, not the literal word "null".
+	if v.Tag == "!!null" {
 		return ""
 	}
 	return v.Value
@@ -272,6 +286,90 @@ func (f *Frontmatter) SetReadCount(n int) {
 	f.setValue(KeyReadCount, scalarInt(n))
 }
 
+// SetTag updates the tag field (e.g., "📚Book"). The Obsidian Book Search
+// plugin template emits this as a string scalar, not an array.
+func (f *Frontmatter) SetTag(s string) {
+	f.setValue(KeyTag, scalarString(s))
+}
+
+// SetSubtitle updates the subtitle field. Empty string clears the value
+// but leaves the field present.
+func (f *Frontmatter) SetSubtitle(s string) {
+	f.setValue(KeySubtitle, scalarString(s))
+}
+
+// SetAuthors replaces the authors array. A nil or empty slice renders as
+// "[]" (flow-style) to match the template default. Each name becomes a
+// string scalar in a block-style sequence so the YAML matches the Book
+// Search plugin layout (one author per line).
+func (f *Frontmatter) SetAuthors(names []string) {
+	f.setValue(KeyAuthors, stringSequence(names))
+}
+
+// SetCategories replaces the categories array. Layout matches SetAuthors.
+func (f *Frontmatter) SetCategories(names []string) {
+	f.setValue(KeyCategories, stringSequence(names))
+}
+
+// SetPublisher updates the publisher field.
+func (f *Frontmatter) SetPublisher(s string) {
+	f.setValue(KeyPublisher, scalarString(s))
+}
+
+// SetPublish updates the publish date field. Stored as a string because
+// the schema accepts either "YYYY" or "YYYY-MM-DD" — callers format
+// beforehand if they want a specific precision.
+func (f *Frontmatter) SetPublish(s string) {
+	f.setValue(KeyPublish, scalarString(s))
+}
+
+// SetTotalPages accepts nil to clear, or a non-negative integer. Negative
+// values are rejected.
+func (f *Frontmatter) SetTotalPages(n *int) error {
+	if n == nil {
+		f.setValue(KeyTotalPages, nullScalar())
+		return nil
+	}
+	if *n < 0 {
+		return fmt.Errorf("total_pages %d must be non-negative", *n)
+	}
+	f.setValue(KeyTotalPages, scalarInt(*n))
+	return nil
+}
+
+// SetISBN updates the isbn field. Callers are expected to have normalized
+// the value (digits only for ISBN-13, digits + optional X for ISBN-10);
+// this setter does not validate format.
+func (f *Frontmatter) SetISBN(s string) {
+	f.setValue(KeyISBN, scalarString(s))
+}
+
+// SetCover updates the cover field. Stored as a string (local cache path
+// or URL per SKILL.md §Frontmatter schema).
+func (f *Frontmatter) SetCover(s string) {
+	f.setValue(KeyCover, scalarString(s))
+}
+
+// SetFormat restricts values to the enum in SKILL.md §Frontmatter schema
+// (audiobook, ebook, physical) or empty string for "unset". Empty string
+// serializes as a null scalar to match the template's unset convention.
+func (f *Frontmatter) SetFormat(s string) error {
+	if !validFormat[s] {
+		return fmt.Errorf("invalid format %q (valid: audiobook, ebook, physical, or empty)", s)
+	}
+	if s == "" {
+		f.setValue(KeyFormat, nullScalar())
+		return nil
+	}
+	f.setValue(KeyFormat, scalarString(s))
+	return nil
+}
+
+// SetSource updates the freeform source field (e.g., "Audible", "Libby").
+func (f *Frontmatter) SetSource(s string) {
+	f.setValue(KeySource, scalarString(s))
+}
+
 // AppendStarted appends a new ISO-formatted date to the started array.
 // Creates the field if absent.
 func (f *Frontmatter) AppendStarted(t time.Time) {
@@ -338,4 +436,20 @@ func scalarFloat(n float64) *yaml.Node {
 
 func nullScalar() *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}
+}
+
+// stringSequence builds a YAML sequence of string scalars. Empty input
+// renders as a flow-style empty sequence ("[]"), matching the Book Search
+// plugin template's convention; non-empty input uses block style so each
+// item lands on its own line.
+func stringSequence(values []string) *yaml.Node {
+	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	if len(values) == 0 {
+		seq.Style = yaml.FlowStyle
+		return seq
+	}
+	for _, v := range values {
+		seq.Content = append(seq.Content, scalarString(v))
+	}
+	return seq
 }
