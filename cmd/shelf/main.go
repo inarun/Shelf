@@ -1,8 +1,10 @@
 // Command shelf is the main entry point for the Shelf local-first
 // reading journal. It loads config, initializes a file-only slog
 // handler, opens the SQLite index, performs a full scan, starts the
-// filesystem watcher, and serves the HTTP UI on the configured bind
-// address with graceful shutdown on SIGINT/SIGTERM.
+// filesystem watcher, serves the HTTP UI on the configured bind
+// address, and runs a Windows system-tray icon. Graceful shutdown
+// triggers on SIGINT/SIGTERM, on a fatal HTTP error, or when the
+// user clicks "Quit" in the tray menu.
 package main
 
 import (
@@ -17,14 +19,20 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/inarun/Shelf/internal/config"
+	"github.com/inarun/Shelf/internal/http/handlers"
 	httpserver "github.com/inarun/Shelf/internal/http/server"
 	"github.com/inarun/Shelf/internal/index/store"
 	syncpkg "github.com/inarun/Shelf/internal/index/sync"
+	"github.com/inarun/Shelf/internal/platform/autostart"
+	"github.com/inarun/Shelf/internal/platform/browser"
+	"github.com/inarun/Shelf/internal/platform/singleton"
+	"github.com/inarun/Shelf/internal/tray"
 	"github.com/inarun/Shelf/internal/vault/watcher"
 )
 
@@ -61,7 +69,7 @@ func main() {
 		)
 	}
 
-	if err := run(cfg, logger, logPath); err != nil {
+	if err := run(cfg, logger, logPath, *configPath); err != nil {
 		logger.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -69,7 +77,26 @@ func main() {
 
 // run is the real entry point — separated from main() so defers fire
 // and a returned error flows through a single exit path.
-func run(cfg *config.Config, logger *slog.Logger, logPath string) error {
+func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) error {
+	libraryURL := fmt.Sprintf("http://127.0.0.1:%d/library", cfg.Server.Port)
+
+	// Single-instance probe: if a live Shelf is already listening on
+	// our port, open its library page in the default browser and exit
+	// cleanly. The probe only accepts 127.0.0.1 so we never falsely
+	// "defer" to an external listener.
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	probeErr := singleton.Probe(probeCtx, cfg.Server.Port, handlers.HealthSignature)
+	probeCancel()
+	if probeErr == nil {
+		logger.Info("existing Shelf instance detected; opening browser", "url", libraryURL)
+		fmt.Printf("shelf: already running on port %d; opening browser.\n", cfg.Server.Port)
+		if err := browser.Open(libraryURL); err != nil {
+			logger.Warn("browser.Open failed", "err", err)
+			return fmt.Errorf("open browser for existing instance: %w", err)
+		}
+		return nil
+	}
+
 	booksAbs := cfg.BooksAbsolutePath()
 	backupsRoot := filepath.Join(cfg.Data.Directory, "backups")
 	dbPath := filepath.Join(cfg.Data.Directory, "shelf.db")
@@ -129,18 +156,6 @@ func run(cfg *config.Config, logger *slog.Logger, logPath string) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	shutdownErrCh := make(chan error, 1)
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-		<-sig
-		logger.Info("shutdown signal received")
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer shutdownCancel()
-		shutdownErrCh <- httpSrv.Shutdown(shutdownCtx)
-		cancel()
-	}()
-
 	logger.Info("shelf listening",
 		"addr", httpSrv.Addr,
 		"books", booksAbs,
@@ -148,15 +163,124 @@ func run(cfg *config.Config, logger *slog.Logger, logPath string) error {
 	)
 	fmt.Printf("shelf: listening on http://%s  (logs: %s)\n", httpSrv.Addr, logPath)
 
-	if err := httpSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("listen and serve: %w", err)
+	// HTTP server on its own goroutine; a fatal listen error cancels
+	// the root context so tray + bootstrap unwind.
+	httpErrCh := make(chan error, 1)
+	go func() {
+		err := httpSrv.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			httpErrCh <- nil
+			return
+		}
+		httpErrCh <- err
+	}()
+
+	autoH := newAutostartHandle(logger, configFlag)
+
+	trayCfg := tray.Config{
+		Tooltip: fmt.Sprintf("Shelf — http://127.0.0.1:%d", cfg.Server.Port),
+		OnOpen: func() {
+			if err := browser.Open(libraryURL); err != nil {
+				logger.Warn("browser.Open from tray failed", "err", err)
+			}
+		},
+		IsAutostartEnabled: func() bool {
+			if autoH == nil {
+				return false
+			}
+			enabled, _, err := autoH.Status()
+			if err != nil {
+				logger.Warn("autostart status", "err", err)
+				return false
+			}
+			return enabled
+		},
+		OnToggleAutostart: func(target bool) error {
+			if autoH == nil {
+				return nil
+			}
+			var err error
+			if target {
+				err = autoH.Enable()
+			} else {
+				err = autoH.Disable()
+			}
+			if err != nil {
+				logger.Warn("autostart toggle", "target", target, "err", err)
+				return err
+			}
+			logger.Info("autostart toggled", "enabled", target)
+			return nil
+		},
+		OnQuit: func() {
+			logger.Info("tray quit requested")
+			cancel()
+		},
 	}
-	// Propagate any shutdown-time error.
-	if sErr := <-shutdownErrCh; sErr != nil {
-		return fmt.Errorf("shutdown: %w", sErr)
+
+	// Fire and forget: tray exits fast on non-Windows (ErrNotSupported)
+	// so we must not block shutdown on its error channel. Real tray
+	// quits cancel the root context via OnQuit.
+	go func() {
+		if err := tray.Run(trayCfg); err != nil && !errors.Is(err, tray.ErrNotSupported) {
+			logger.Warn("tray exited", "err", err)
+		}
+	}()
+
+	// Auto-open the library URL shortly after startup on Windows so
+	// double-clicking shelf.exe behaves like an app launch. Non-Windows
+	// dev runs stay headless for sanity.
+	if runtime.GOOS == "windows" {
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			if err := browser.Open(libraryURL); err != nil {
+				logger.Warn("auto-open browser failed", "err", err)
+			}
+		}()
 	}
+
+	// Wait for one of:
+	//   * OS shutdown signal
+	//   * HTTP server exit (graceful or fatal)
+	//   * Context cancellation (tray Quit)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	var runErr error
+	select {
+	case <-sigCh:
+		logger.Info("os signal received")
+	case err := <-httpErrCh:
+		if err != nil {
+			logger.Error("http server", "err", err)
+			runErr = err
+		} else {
+			logger.Info("http server exited")
+		}
+	case <-ctx.Done():
+		logger.Info("root context cancelled")
+	}
+
+	// Initiate graceful shutdown regardless of which branch fired.
+	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Warn("http shutdown", "err", err)
+	}
+
+	tray.Stop()
+
+	// Drain channels so the HTTP goroutine gets to exit before we return.
+	select {
+	case <-httpErrCh:
+	case <-time.After(3 * time.Second):
+		logger.Warn("http goroutine did not exit within 3s")
+	}
+
 	logger.Info("shelf stopped")
-	return nil
+	return runErr
 }
 
 // initLogger opens {dataDir}/logs/shelf.log for append-only JSON slog.
@@ -224,4 +348,37 @@ func mapWatcherKind(k watcher.Kind) syncpkg.EventKind {
 	default:
 		return syncpkg.EventWrite
 	}
+}
+
+// newAutostartHandle builds the autostart registration handle. The
+// command string is the current binary's absolute path, quoted, plus
+// the --config flag if the user launched with one so an autostart
+// entry keeps pointing at the same config the user picked.
+//
+// Returns nil (not an error) if os.Executable fails, so the tray can
+// still run with autostart toggling silently disabled. A failed
+// Executable() lookup on Windows is exceedingly rare.
+func newAutostartHandle(logger *slog.Logger, configFlag string) *autostart.Autostart {
+	exePath, err := os.Executable()
+	if err != nil {
+		logger.Warn("autostart: os.Executable failed — autostart unavailable", "err", err)
+		return nil
+	}
+	absExe, err := filepath.Abs(exePath)
+	if err == nil {
+		exePath = absExe
+	}
+	command := fmt.Sprintf(`"%s"`, exePath)
+	if configFlag != "" {
+		absCfg, err := filepath.Abs(configFlag)
+		if err == nil {
+			command = fmt.Sprintf(`"%s" --config "%s"`, exePath, absCfg)
+		}
+	}
+	handle, err := autostart.New(autostart.AppName, command)
+	if err != nil {
+		logger.Warn("autostart: new handle failed", "err", err)
+		return nil
+	}
+	return handle
 }
