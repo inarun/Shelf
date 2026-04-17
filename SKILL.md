@@ -160,6 +160,8 @@ Runs of whitespace inside title/author are collapsed to a single space; leading/
 
 ## Frontmatter schema
 
+> **2026-04-16 (Session 2):** Confirmed series field names from the Obsidian Book Search plugin template. `series` is a string; `series_index` is a number (supports fractional indices like 1.5). Filenames never carry series info per §Filename convention — series identity lives in frontmatter only.
+
 The frontmatter matches the user's existing Obsidian Book Search plugin template exactly, with two additions for re-read tracking:
 
 ```yaml
@@ -168,6 +170,8 @@ title: ""
 subtitle: ""
 authors: []              # array of author names
 categories: []           # array of genre/category tags
+series: ""               # series name, or empty if standalone
+series_index:            # position in series (number; supports 1.5 etc.), or null
 publisher: ""
 publish: ""              # publish date as string (YYYY or YYYY-MM-DD)
 total_pages: 
@@ -254,13 +258,15 @@ When a field value exists in multiple sources, resolution order from highest to 
 
 ## Concurrent edit handling
 
+> **2026-04-16 (Session 2):** Windows-feasible flock without cgo is not practical for v0.1, so the staleness guard is a `(size, mtime_ns)` pair rather than mtime alone. The pair is stamped at read time via a single `os.File.Stat` on the open handle (eliminates the read-stat race) and re-checked immediately before the atomic rename. NTFS mtime resolution is coarse enough on Windows that same-ns collisions are possible across fast edits; comparing size as well catches the common miss. The tiny stat→rename race window is accepted for v0.1. Frontmatter-only writes remain unconditional — they re-read the file from disk, replace only the delimited YAML block, and write atomically, so they cannot clobber concurrent body edits.
+
 Obsidian and Shelf can both have the same file open. The rules:
 
 **Frontmatter-only writes (rating change, status change, date stamp):** always safe, always write. Read current file, mutate only the targeted frontmatter fields, write atomically. Even if Obsidian is editing the body, this won't clobber body content because the app only replaces the frontmatter block.
 
-**Body writes (full review edit, timeline update):** check mtime before writing. If the file has been modified since the app last read it, **refuse the write** with a clear error: "This note was changed outside the app. Reload before saving." The UI must provide a "Reload" button. Never attempt automatic merging.
+**Body writes (full review edit, timeline update):** check the `(size, mtime_ns)` staleness pair before writing. If either value differs from the pair stamped at read time, **refuse the write** with a clear error: "This note was changed outside the app. Reload before saving." The UI must provide a "Reload" button. Never attempt automatic merging.
 
-**Implementation detail:** the app's in-memory book record stamps the last-read `mtime_ns` when reading. The write path reads `mtime_ns` again immediately before writing (holding a flock if feasible on Windows) and aborts if it differs from the stamped value.
+**Implementation detail:** the app's in-memory book record stamps `(size, mtime_ns)` from `os.File.Stat` on the open handle at read time. The write path re-stats the target immediately before rename and aborts with `ErrStale` if either stamped value differs.
 
 ## Configuration
 
@@ -452,8 +458,8 @@ Requires: Host header validation extended to allow Tailscale addresses; PWA layo
 ## Open questions (to resolve as they come up)
 
 - ~~**Filename convention verification:**~~ *Resolved 2026-04-16.* Convention is `{Title} by {Author}.md` with no series prefix. See §Filename convention.
-- **Non-canonical filename rename pipeline:** how to present rename proposals for files that don't match the canonical convention. Dry-run + per-file confirmation per the approved plan; exact UI and diff format TBD in Session 2 or 3.
-- **Series frontmatter fields:** verify against a real series-member file in Nusayb's vault. Likely `series` (string) + `series_index` (number), matching the Book Search plugin template. Resolve during Session 2 body parser work before any code depends on specific field names.
+- **Non-canonical filename rename pipeline:** Session 3 scope (rides with the Goodreads importer's dry-run + backup + apply pipeline). Session 2 indexer flags non-canonical filenames via `canonical_name = 0` and a warning; it never renames.
+- ~~**Series frontmatter fields:**~~ *Resolved 2026-04-16 (Session 2).* `series` (string) + `series_index` (number). See §Frontmatter schema.
 - **Windows autostart mechanism:** Registry `Run` key vs. Scheduled Task vs. Startup folder shortcut. Pick the least-privileged option that works; Registry `Run` with per-user scope is likely correct.
 - **System tray library selection:** evaluate 2-3 Go tray libraries for maintenance status, no-cgo preferred, Windows 11 compatibility. Document the choice before installing.
 - **PWA icon assets:** need source icon from user; generate all required sizes at build time.
