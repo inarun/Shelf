@@ -15,6 +15,8 @@ const (
 	KeySubtitle    = "subtitle"
 	KeyAuthors     = "authors"
 	KeyCategories  = "categories"
+	KeySeries      = "series"
+	KeySeriesIndex = "series_index"
 	KeyPublisher   = "publisher"
 	KeyPublish     = "publish"
 	KeyTotalPages  = "total_pages"
@@ -95,6 +97,21 @@ func (f *Frontmatter) getInt(key string) *int {
 	return &n
 }
 
+// getFloat returns a parsed float64 pointer, or nil when the field is
+// absent, empty, null, or not parseable. Tolerates integer forms too so
+// series_index values like "1" and "1.5" both round-trip cleanly.
+func (f *Frontmatter) getFloat(key string) *float64 {
+	v := f.findValue(key)
+	if v == nil || v.Kind != yaml.ScalarNode || v.Value == "" || v.Tag == "!!null" {
+		return nil
+	}
+	n, err := strconv.ParseFloat(v.Value, 64)
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
 func (f *Frontmatter) getDateArray(key string) []time.Time {
 	v := f.findValue(key)
 	if v == nil || v.Kind != yaml.SequenceNode {
@@ -127,6 +144,12 @@ func (f *Frontmatter) Source() string     { return f.getString(KeySource) }
 func (f *Frontmatter) Status() string     { return f.getString(KeyStatus) }
 func (f *Frontmatter) Authors() []string  { return f.getStringArray(KeyAuthors) }
 func (f *Frontmatter) Categories() []string { return f.getStringArray(KeyCategories) }
+func (f *Frontmatter) Series() string     { return f.getString(KeySeries) }
+
+// SeriesIndex returns the series position as a pointer (nil when absent).
+// Value is a float to support fractional positions like 1.5. For whole
+// numbers both "1" and "1.0" in the source parse to 1.0.
+func (f *Frontmatter) SeriesIndex() *float64 { return f.getFloat(KeySeriesIndex) }
 
 // TotalPages returns nil when the field is absent or empty. Use a pointer
 // because "not set" is semantically distinct from 0.
@@ -153,6 +176,28 @@ func (f *Frontmatter) Finished() []time.Time { return f.getDateArray(KeyFinished
 
 func (f *Frontmatter) SetTitle(s string) {
 	f.setValue(KeyTitle, scalarString(s))
+}
+
+// SetSeries updates the series name. An empty string clears the field's
+// value but leaves it present (matching how the Book Search plugin
+// emits unset string fields).
+func (f *Frontmatter) SetSeries(s string) {
+	f.setValue(KeySeries, scalarString(s))
+}
+
+// SetSeriesIndex accepts nil to clear the index, or a value. Whole
+// numbers serialize as integers ("1"), fractions as decimals ("1.5").
+// Negative or NaN/Inf values are rejected.
+func (f *Frontmatter) SetSeriesIndex(n *float64) error {
+	if n == nil {
+		f.setValue(KeySeriesIndex, nullScalar())
+		return nil
+	}
+	if *n < 0 || *n != *n || *n*0 != 0 { // NaN: n != n; Inf: n*0 != 0
+		return fmt.Errorf("series_index %v invalid", *n)
+	}
+	f.setValue(KeySeriesIndex, scalarFloat(*n))
+	return nil
 }
 
 // SetRating accepts nil to clear the rating, or *r in the range 1..5.
@@ -234,6 +279,24 @@ func scalarString(s string) *yaml.Node {
 
 func scalarInt(n int) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(n)}
+}
+
+// scalarFloat emits whole numbers with an "!!int" tag ("1") and fractional
+// values with "!!float" ("1.5"), using the shortest round-trip form. This
+// matches hand-written YAML where series_index: 1 reads naturally.
+func scalarFloat(n float64) *yaml.Node {
+	if n == float64(int64(n)) {
+		return &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!int",
+			Value: strconv.FormatInt(int64(n), 10),
+		}
+	}
+	return &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!float",
+		Value: strconv.FormatFloat(n, 'f', -1, 64),
+	}
 }
 
 func nullScalar() *yaml.Node {

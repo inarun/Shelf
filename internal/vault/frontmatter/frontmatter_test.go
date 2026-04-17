@@ -3,6 +3,7 @@ package frontmatter
 import (
 	"bytes"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -426,6 +427,146 @@ started:
 	got := f.Started()
 	if len(got) != 2 {
 		t.Errorf("expected 2 valid dates (malformed skipped), got %d: %v", len(got), got)
+	}
+}
+
+func TestSeries_GetFromYAML(t *testing.T) {
+	input := []byte(`---
+title: The Way of Kings
+series: The Stormlight Archive
+series_index: 1
+---
+`)
+	f, _, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Series(); got != "The Stormlight Archive" {
+		t.Errorf("Series got %q", got)
+	}
+	idx := f.SeriesIndex()
+	if idx == nil || *idx != 1.0 {
+		t.Errorf("SeriesIndex got %v, want *1.0", idx)
+	}
+}
+
+func TestSeries_FractionalIndex(t *testing.T) {
+	input := []byte(`---
+title: Edgedancer
+series: The Stormlight Archive
+series_index: 2.5
+---
+`)
+	f, _, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := f.SeriesIndex()
+	if idx == nil || *idx != 2.5 {
+		t.Errorf("SeriesIndex got %v, want *2.5", idx)
+	}
+}
+
+func TestSeries_Absent(t *testing.T) {
+	f := NewEmpty()
+	if got := f.Series(); got != "" {
+		t.Errorf("Series got %q, want empty", got)
+	}
+	if idx := f.SeriesIndex(); idx != nil {
+		t.Errorf("SeriesIndex got %v, want nil", idx)
+	}
+}
+
+func TestSeries_SetAndRoundTrip(t *testing.T) {
+	input := []byte(`---
+title: Mistborn
+---
+body
+`)
+	f, body, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetSeries("Mistborn Era One")
+	idx := 1.0
+	if err := f.SetSeriesIndex(&idx); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.Serialize(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Parse the output and assert round-trip.
+	f2, _, err := Parse(out)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if got := f2.Series(); got != "Mistborn Era One" {
+		t.Errorf("Series round-trip got %q", got)
+	}
+	got := f2.SeriesIndex()
+	if got == nil || *got != 1.0 {
+		t.Errorf("SeriesIndex round-trip got %v", got)
+	}
+	// Whole-number index should emit without a decimal.
+	if !bytes.Contains(out, []byte("series_index: 1\n")) && !bytes.Contains(out, []byte("series_index: 1\r\n")) {
+		t.Errorf("expected bare integer emission for series_index: 1, got:\n%s", out)
+	}
+}
+
+func TestSeries_SetFractionalRoundTrip(t *testing.T) {
+	f := NewEmpty()
+	f.SetSeries("Stormlight")
+	idx := 2.5
+	if err := f.SetSeriesIndex(&idx); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.Serialize(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, _, err := Parse(out)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	got := f2.SeriesIndex()
+	if got == nil || *got != 2.5 {
+		t.Errorf("SeriesIndex got %v, want *2.5\nemitted:\n%s", got, out)
+	}
+}
+
+func TestSetSeriesIndex_Clear(t *testing.T) {
+	input := []byte(`---
+series: Stormlight
+series_index: 1
+---
+`)
+	f, _, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetSeriesIndex(nil); err != nil {
+		t.Fatal(err)
+	}
+	if idx := f.SeriesIndex(); idx != nil {
+		t.Errorf("after clear, SeriesIndex got %v, want nil", idx)
+	}
+}
+
+func TestSetSeriesIndex_Rejects(t *testing.T) {
+	f := NewEmpty()
+	neg := -1.0
+	if err := f.SetSeriesIndex(&neg); err == nil {
+		t.Error("negative index should be rejected")
+	}
+	nan := math.NaN()
+	if err := f.SetSeriesIndex(&nan); err == nil {
+		t.Error("NaN should be rejected")
+	}
+	inf := math.Inf(1)
+	if err := f.SetSeriesIndex(&inf); err == nil {
+		t.Error("+Inf should be rejected")
 	}
 }
 
