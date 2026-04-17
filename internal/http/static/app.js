@@ -291,10 +291,23 @@
     }
   }
 
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) return;
+    if (window.location.protocol !== "https:" &&
+        window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1") {
+      return;
+    }
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+      // Registration failures are not actionable for the user; silent is fine.
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-rating-widget]").forEach(initRating);
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
     document.querySelectorAll("[data-review-form]").forEach(initReview);
     initImport();
+    registerServiceWorker();
   });
 })();

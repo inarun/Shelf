@@ -9,7 +9,7 @@ import (
 )
 
 func TestFSContainsExpectedAssets(t *testing.T) {
-	want := []string{"app.css", "app.js", "favicon.svg"}
+	want := []string{"app.css", "app.js", "favicon.svg", "manifest.webmanifest", "sw.js"}
 	for _, name := range want {
 		f, err := FS().Open(name)
 		if err != nil {
@@ -17,6 +17,54 @@ func TestFSContainsExpectedAssets(t *testing.T) {
 			continue
 		}
 		f.Close()
+	}
+}
+
+func TestManifestHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil)
+	w := httptest.NewRecorder()
+	ManifestHandler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("manifest status = %d, want 200", w.Code)
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/manifest+json") {
+		t.Errorf("manifest Content-Type = %q, want application/manifest+json...", ct)
+	}
+	if !strings.Contains(w.Body.String(), "\"start_url\"") {
+		t.Error("manifest body missing start_url")
+	}
+}
+
+func TestServiceWorkerHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+	w := httptest.NewRecorder()
+	ServiceWorkerHandler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sw status = %d, want 200", w.Code)
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/javascript") {
+		t.Errorf("sw Content-Type = %q, want text/javascript...", ct)
+	}
+	if got := w.Header().Get("Service-Worker-Allowed"); got != "/" {
+		t.Errorf("Service-Worker-Allowed = %q, want /", got)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "addEventListener(\"fetch\"") {
+		t.Error("sw body missing fetch handler")
+	}
+}
+
+func TestServiceWorkerNoExternalURLs(t *testing.T) {
+	data, err := fs.ReadFile(FS(), "sw.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"http://", "https://", "cdn.", "googleapis", "jsdelivr"} {
+		if strings.Contains(string(data), bad) {
+			t.Errorf("sw.js contains forbidden external reference %q", bad)
+		}
 	}
 }
 

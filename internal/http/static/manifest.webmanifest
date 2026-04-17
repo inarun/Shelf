@@ -1,0 +1,22 @@
+{
+  "name": "Shelf",
+  "short_name": "Shelf",
+  "description": "Local-first reading journal for Obsidian users.",
+  "start_url": "/library",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fafaf8",
+  "theme_color": "#2a6f97",
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

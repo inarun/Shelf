@@ -22,6 +22,11 @@ func registerRoutes(mux *http.ServeMux, h *handlers.Dependencies) {
 	// Static assets.
 	mux.Handle("GET /static/", http.StripPrefix("/static/", static.Handler()))
 
+	// PWA surface. Manifest + service worker are served at origin root
+	// so the service worker scope covers /library, /books/*, /import.
+	mux.Handle("GET /manifest.webmanifest", static.ManifestHandler())
+	mux.Handle("GET /sw.js", static.ServiceWorkerHandler())
+
 	// Liveness.
 	mux.HandleFunc("GET /healthz", h.Health)
 
