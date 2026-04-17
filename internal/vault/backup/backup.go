@@ -112,10 +112,12 @@ func Snapshot(ctx context.Context, booksDir, backupsRoot string) (*SnapshotInfo,
 			return fmt.Errorf("backup: validate dst %q: %w", dstPath, err)
 		}
 
-		// #nosec G304 -- srcPath is yielded by filepath.WalkDir rooted at
-		// resolvedSource (EvalSymlinks-canonicalized), so it cannot escape
+		// #nosec G304,G122 -- srcPath is yielded by filepath.WalkDir rooted
+		// at resolvedSource (EvalSymlinks-canonicalized), so it cannot escape
 		// the caller-supplied booksDir. Callers validate booksDir at config
-		// load time; see package doc.
+		// load time; see package doc. The TOCTOU window between walk and
+		// read is acceptable for v0.1's local single-user Windows vault
+		// threat model (symlink creation requires Admin/Developer Mode).
 		data, err := os.ReadFile(srcPath)
 		if err != nil {
 			return fmt.Errorf("backup: read %q: %w", srcPath, err)
