@@ -58,12 +58,15 @@ internal/
   
   vault/
     paths/                # path validation, filename generation, filename parsing
-    atomic/               # atomic write primitive (temp + fsync + rename)
+    atomic/               # atomic write + rename primitives (temp + fsync + rename)
     frontmatter/          # YAML frontmatter parse/serialize preserving order
     body/                 # body section parse/serialize (## headers as structure)
-    note/                 # high-level: read/write a book note as a typed record
+    note/                 # high-level: read/write/create a book note as a typed record
     watcher/              # fsnotify wrapper emitting typed events
-    backup/               # snapshot the Books folder to a timestamped directory
+    backup/               # recursive timestamped snapshot of the Books folder
+    rename/               # non-canonical filename rename pipeline (plan + apply)
+
+  strmatch/               # string normalization + Levenshtein (no external deps)
     
   domain/
     book/                 # Book type, validation, business rules
@@ -243,6 +246,8 @@ Any heading the app doesn't recognize is preserved verbatim, in its original pos
 
 ## Data precedence
 
+> **2026-04-17 (Session 3):** Added a template-default exception for `status`. The Obsidian Book Search plugin template emits `status: unread` as its default; a strict read of the "populated" rule would block Goodreads import from ever setting status for template-created notes. The importer treats `status: unread` as a gap. Populated non-default statuses (`reading`, `paused`, `finished`, `dnf`) are preserved per the usual rule.
+
 When a field value exists in multiple sources, resolution order from highest to lowest:
 
 1. **Populated vault frontmatter** (user-authored or previously written by app)
@@ -253,6 +258,8 @@ When a field value exists in multiple sources, resolution order from highest to 
 6. **Metadata provider** (Open Library, Hardcover) — lowest, used only for pure metadata (pages, publisher, cover) not personal data
 
 **Rule:** external sources fill gaps, never overwrite. A field is "populated" if it's a non-zero, non-empty, non-null value. An empty string or empty array is a gap.
+
+**`status` exception (Session 3):** `status: unread` is treated as a gap for the purpose of external-source import because it is the template default, not a deliberate user assertion. Any other populated status value (`reading`, `paused`, `finished`, `dnf`) is respected.
 
 **Exception:** on explicit user action in the app UI ("pull latest from Goodreads," "re-fetch metadata"), the app may propose overwriting specific fields — but always with a diff preview and explicit confirmation.
 
@@ -314,6 +321,8 @@ cache_ttl_days = 30
 - `server.bind` defaults to `127.0.0.1`; warn (don't error) if set to `0.0.0.0` or an external interface — matches §Core Invariant #4.
 
 ## Goodreads CSV import
+
+> **2026-04-17 (Session 3):** Operationalized. Concrete handling captured below: Excel formula ISBN format `="..."` is stripped; dates parse as `YYYY/MM/DD` first and fall back to `YYYY-MM-DD`; titles of the form `Title (Series Name, #N)` split into clean title + series + index (fractional indices like `#1.5` supported); `Bookshelves` column populates `categories` after filtering out the three exclusive-shelf values (`to-read`, `currently-reading`, `read`) which are status-mapping only; multi-author handling combines `Author` and `Additional Authors` (comma-split) into the `authors` array; fuzzy match threshold is Levenshtein ratio ≥ 0.92 on normalized title AND surname exact-normalized match (softer matches become conflicts); `status: unread` is a gap (see §Data precedence exception); review text is written into the `## Notes` section with `_Imported from Goodreads on YYYY-MM-DD_` provenance, every review line blockquote-prefixed (`> `) so a stray `## ` in a review cannot accidentally start a new body section. Apply is sequential, sorted by filename, and accumulates per-entry errors into a report — the backup IS the rollback.
 
 The single most dangerous operation in v0.1 (touches ~100 files). Design rules:
 
@@ -458,7 +467,7 @@ Requires: Host header validation extended to allow Tailscale addresses; PWA layo
 ## Open questions (to resolve as they come up)
 
 - ~~**Filename convention verification:**~~ *Resolved 2026-04-16.* Convention is `{Title} by {Author}.md` with no series prefix. See §Filename convention.
-- **Non-canonical filename rename pipeline:** Session 3 scope (rides with the Goodreads importer's dry-run + backup + apply pipeline). Session 2 indexer flags non-canonical filenames via `canonical_name = 0` and a warning; it never renames.
+- ~~**Non-canonical filename rename pipeline:**~~ *Resolved 2026-04-17 (Session 3).* Delivered as `internal/vault/rename`, a separate package with its own Plan / Apply that shares the backup + atomic-rename primitives with the Goodreads importer. Session 2's `canonical_name = 0` flag is the rename pipeline's input; it scans those rows and proposes a rename to the canonical form derived from frontmatter title + authors[0].
 - ~~**Series frontmatter fields:**~~ *Resolved 2026-04-16 (Session 2).* `series` (string) + `series_index` (number). See §Frontmatter schema.
 - **Windows autostart mechanism:** Registry `Run` key vs. Scheduled Task vs. Startup folder shortcut. Pick the least-privileged option that works; Registry `Run` with per-user scope is likely correct.
 - **System tray library selection:** evaluate 2-3 Go tray libraries for maintenance status, no-cgo preferred, Windows 11 compatibility. Document the choice before installing.
