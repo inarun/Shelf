@@ -54,3 +54,12 @@ func isRetryableWinError(err error) bool {
 	}
 	return false
 }
+
+// Rename performs an atomic same-volume rename. On Windows it retries on
+// transient ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION (see
+// renameWithRetry). Callers must ensure src and dst are on the same
+// volume and that both paths have been validated via
+// internal/vault/paths.ValidateWithinRoot (or the Vault wrapper) upstream.
+func Rename(src, dst string) error {
+	return renameWithRetry(src, dst)
+}
