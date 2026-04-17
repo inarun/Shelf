@@ -11,9 +11,16 @@ import (
 // Frontmatter is a mutable wrapper around a *yaml.Node mapping. Mutation
 // preserves field order, comments, and quoting style — the whole point of
 // working at the node level rather than decoding into a struct.
+//
+// The mutated set tracks which keys have been touched via setters since
+// the Frontmatter was parsed or constructed. SaveFrontmatter in
+// internal/vault/note uses it to replay only the app's changes onto a
+// freshly-read disk copy, so concurrent Obsidian edits to untouched
+// fields survive the write.
 type Frontmatter struct {
 	root    *yaml.Node // MappingNode holding the frontmatter fields
 	useCRLF bool       // true if the original frontmatter block used CRLF
+	mutated map[string]struct{}
 }
 
 // ErrNoFrontmatter is returned by Parse when the input has no YAML block

@@ -554,6 +554,41 @@ series_index: 1
 	}
 }
 
+func TestMutatedKeys_TracksSetters(t *testing.T) {
+	input := []byte(`---
+title: Hyperion
+rating: 3
+---
+`)
+	f, _, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No mutations yet.
+	if keys := f.MutatedKeys(); len(keys) != 0 {
+		t.Errorf("fresh parse should report 0 mutations, got %v", keys)
+	}
+	r := 5
+	if err := f.SetRating(&r); err != nil {
+		t.Fatal(err)
+	}
+	f.AppendStarted(mustParseDate(t, "2025-04-02"))
+
+	seen := map[string]bool{}
+	for _, k := range f.MutatedKeys() {
+		seen[k] = true
+	}
+	if !seen[KeyRating] {
+		t.Errorf("rating not tracked")
+	}
+	if !seen[KeyStarted] {
+		t.Errorf("started not tracked")
+	}
+	if seen[KeyTitle] {
+		t.Errorf("title should not be tracked (never set)")
+	}
+}
+
 func TestSetSeriesIndex_Rejects(t *testing.T) {
 	f := NewEmpty()
 	neg := -1.0

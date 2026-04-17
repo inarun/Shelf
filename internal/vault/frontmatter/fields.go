@@ -54,7 +54,10 @@ func (f *Frontmatter) findValue(key string) *yaml.Node {
 
 // setValue replaces the value node for key in place, or appends
 // [key, value] if key is absent. Existing field order is preserved.
+// Records the key in the mutated set so SaveFrontmatter knows which
+// fields to carry onto a fresh disk read.
 func (f *Frontmatter) setValue(key string, value *yaml.Node) {
+	f.markMutated(key)
 	for i := 0; i+1 < len(f.root.Content); i += 2 {
 		if f.root.Content[i].Value == key {
 			f.root.Content[i+1] = value
@@ -63,6 +66,39 @@ func (f *Frontmatter) setValue(key string, value *yaml.Node) {
 	}
 	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
 	f.root.Content = append(f.root.Content, keyNode, value)
+}
+
+func (f *Frontmatter) markMutated(key string) {
+	if f.mutated == nil {
+		f.mutated = map[string]struct{}{}
+	}
+	f.mutated[key] = struct{}{}
+}
+
+// MutatedKeys returns the frontmatter keys that have been written
+// through setters since parse/construction, in no particular order.
+// Callers doing a frontmatter-only write use this to replay mutations
+// onto a freshly-read disk copy without clobbering untouched fields.
+func (f *Frontmatter) MutatedKeys() []string {
+	out := make([]string, 0, len(f.mutated))
+	for k := range f.mutated {
+		out = append(out, k)
+	}
+	return out
+}
+
+// GetRawValue returns the value node for key, or nil if absent. Used by
+// callers that need to copy mutated fields across Frontmatter instances
+// without going through the typed accessors.
+func (f *Frontmatter) GetRawValue(key string) *yaml.Node {
+	return f.findValue(key)
+}
+
+// SetRawValue installs value under key, marking it mutated. Intended
+// for cross-Frontmatter copying — the typed setters are preferred for
+// anything the caller produces itself.
+func (f *Frontmatter) SetRawValue(key string, value *yaml.Node) {
+	f.setValue(key, value)
 }
 
 func (f *Frontmatter) getString(key string) string {
@@ -268,6 +304,7 @@ func (f *Frontmatter) appendDate(key string, t time.Time) {
 		return
 	}
 	v.Content = append(v.Content, date)
+	f.markMutated(key)
 }
 
 // Constructors for YAML scalar nodes. Centralized so node tags/styles
