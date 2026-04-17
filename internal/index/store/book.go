@@ -196,19 +196,30 @@ RETURNING id
 // upsertNamed inserts a row into (series|authors|categories) by unique
 // name (case-insensitive via the column COLLATE NOCASE) and returns the
 // id. Works for pre-existing rows too.
+//
+// The table argument must be one of the three known table names; it is
+// never derived from user input. Using a compile-time allowlist plus a
+// panic on mismatch keeps static analysis happy and fails fast if a
+// future caller typos the argument.
 func upsertNamed(ctx context.Context, tx *sql.Tx, table, name string) (int64, error) {
-	// ON CONFLICT requires a UNIQUE constraint; all three tables have one
-	// on name. RETURNING id gives back the persisted id whether the row
-	// is new or pre-existing.
-	sqlStmt := fmt.Sprintf(
-		"INSERT INTO %s (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = excluded.name RETURNING id",
-		table,
-	)
+	stmt, ok := upsertStatements[table]
+	if !ok {
+		return 0, fmt.Errorf("store: upsertNamed called with unknown table %q", table)
+	}
 	var id int64
-	if err := tx.QueryRowContext(ctx, sqlStmt, name).Scan(&id); err != nil {
+	if err := tx.QueryRowContext(ctx, stmt, name).Scan(&id); err != nil {
 		return 0, fmt.Errorf("store: upsert %s %q: %w", table, name, err)
 	}
 	return id, nil
+}
+
+// upsertStatements pre-builds the three legal statements used by
+// upsertNamed. All SQL here is static — no user input ever reaches the
+// statement text.
+var upsertStatements = map[string]string{
+	"series":     "INSERT INTO series (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = excluded.name RETURNING id",
+	"authors":    "INSERT INTO authors (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = excluded.name RETURNING id",
+	"categories": "INSERT INTO categories (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = excluded.name RETURNING id",
 }
 
 // GetBookByFilename returns the full row for a book, including joined
@@ -293,6 +304,10 @@ LEFT JOIN series s ON s.id = b.series_id`
 		args = append(args, f.AuthorName)
 	}
 	if len(where) > 0 {
+		// #nosec G202 -- every entry in `where` is a compile-time
+		// string literal chosen by a static if/else on the Filter
+		// struct; user-supplied values only ever land in `args` and
+		// flow through the parameterized ? placeholders.
 		sqlStmt += "\nWHERE " + joinWithAnd(where)
 	}
 	sqlStmt += "\nORDER BY b.title ASC"
