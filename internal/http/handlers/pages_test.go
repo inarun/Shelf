@@ -48,8 +48,11 @@ func seedDeps(t *testing.T) (*Dependencies, string) {
 	t.Helper()
 	root := t.TempDir()
 	books := filepath.Join(root, "books")
-	if err := os.MkdirAll(books, 0o700); err != nil {
-		t.Fatal(err)
+	backups := filepath.Join(root, "backups")
+	for _, dir := range []string{books, backups} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	path := filepath.Join(books, "Hyperion by Dan Simmons.md")
 	if err := os.WriteFile(path, []byte(hyperionFixture), 0o600); err != nil {
