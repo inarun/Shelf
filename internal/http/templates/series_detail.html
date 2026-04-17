@@ -1,0 +1,21 @@
+{{define "series_detail"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>{{.Series.Name}} — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main>
+    <p><a href="/series">&larr; All series</a></p>
+    <h1>{{.Series.Name}}</h1>
+    <p class="muted">{{.Series.Finished}} of {{.Series.BookCount}} finished</p>
+    <div class="book-grid">
+      {{range .Series.Books}}{{template "bookCard" .}}{{end}}
+    </div>
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

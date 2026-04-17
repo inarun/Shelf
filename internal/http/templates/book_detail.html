@@ -11,11 +11,14 @@
     <p><a href="/library">&larr; Library</a></p>
     <article class="book-detail" data-filename="{{.Book.Filename}}">
       <aside>
+        {{if .Book.Cover}}
+          <img class="book-cover-large" src="{{.Book.Cover}}" alt="Cover of {{.Book.Title}}">
+        {{end}}
         <h1>{{.Book.Title}}{{if not .Book.CanonicalName}}<span class="non-canonical-pill" title="Filename does not match Title by Author.md">non-canonical filename</span>{{end}}</h1>
         {{if .Book.Subtitle}}<p class="muted">{{.Book.Subtitle}}</p>{{end}}
         <p class="authors">{{if .Book.Authors}}{{join ", " .Book.Authors}}{{else}}<em>unknown author</em>{{end}}</p>
         <dl>
-          {{if .Book.SeriesName}}<dt>Series</dt><dd>{{.Book.SeriesName}}{{if .Book.SeriesIndex}} #{{.Book.SeriesIndex}}{{end}}</dd>{{end}}
+          {{if .Book.SeriesName}}<dt>Series</dt><dd><a href="/series/{{safeSeriesHref .Book.SeriesName}}">{{.Book.SeriesName}}</a>{{if .Book.SeriesIndex}} #{{.Book.SeriesIndex}}{{end}}</dd>{{end}}
           {{if .Book.Publisher}}<dt>Publisher</dt><dd>{{.Book.Publisher}}</dd>{{end}}
           {{if .Book.PublishDate}}<dt>Published</dt><dd>{{.Book.PublishDate}}</dd>{{end}}
           {{if .Book.TotalPages}}<dt>Pages</dt><dd>{{.Book.TotalPages}}</dd>{{end}}
@@ -25,6 +28,11 @@
           <dt>Read count</dt><dd>{{.Book.ReadCount}}</dd>
           {{if .Book.Categories}}<dt>Categories</dt><dd>{{join ", " .Book.Categories}}</dd>{{end}}
         </dl>
+        <div class="cover-controls" data-cover-controls data-filename="{{.Book.Filename}}">
+          <button type="button" id="refresh-cover-btn" class="secondary" {{if not .Book.ISBN}}disabled title="No ISBN on this note — cannot refresh cover automatically"{{end}}>
+            {{if .Book.Cover}}Refresh cover{{else}}Fetch cover{{end}}
+          </button>
+        </div>
       </aside>
 
       <section>

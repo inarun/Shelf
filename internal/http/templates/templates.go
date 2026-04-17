@@ -18,14 +18,16 @@ var files embed.FS
 // FuncMap is exposed so tests can assert the registered helpers.
 func FuncMap() template.FuncMap {
 	return template.FuncMap{
-		"join":        func(sep string, a []string) string { return strings.Join(a, sep) },
-		"stars":       stars,
-		"statusClass": statusClass,
-		"statusLabel": statusLabel,
-		"safeHref":    safeHref,
-		"pluralS":     func(n int) string { if n == 1 { return "" }; return "s" },
-		"emptyOr":     func(s, fallback string) string { if s == "" { return fallback }; return s },
-		"deref":       derefInt,
+		"join":            func(sep string, a []string) string { return strings.Join(a, sep) },
+		"stars":           stars,
+		"statusClass":     statusClass,
+		"statusLabel":     statusLabel,
+		"safeHref":        safeHref,
+		"safeSeriesHref":  safeSeriesHref,
+		"barWidth":        barWidth,
+		"pluralS":         func(n int) string { if n == 1 { return "" }; return "s" },
+		"emptyOr":         func(s, fallback string) string { if s == "" { return fallback }; return s },
+		"deref":           derefInt,
 	}
 }
 
@@ -104,4 +106,32 @@ func statusLabel(s string) string {
 // attacker-controlled content cannot reach this function.
 func safeHref(filename string) template.URL {
 	return template.URL(fmt.Sprintf("/books/%s", url.PathEscape(filename)))
+}
+
+// safeSeriesHref is the sibling of safeHref for series names. Series
+// names come from the series table, itself populated from vault
+// frontmatter; no user-controlled query string or scheme ever reaches
+// this function.
+//
+// #nosec G203 -- URL-path-escape of a validated identifier; see safeHref.
+func safeSeriesHref(name string) template.URL {
+	return template.URL(url.PathEscape(name))
+}
+
+// barWidth returns a CSS width percentage for bar-chart rows on the
+// stats page. max of 0 yields "0%"; values above max are clamped to
+// 100%. The returned template.CSS bypasses html/template auto-escaping
+// for style attribute values.
+//
+// #nosec G203 -- The output is an integer percentage composed in-package;
+// no caller-controlled text flows into it.
+func barWidth(value, max int64) template.CSS {
+	if max <= 0 || value <= 0 {
+		return template.CSS("0%")
+	}
+	pct := int64(100)
+	if value < max {
+		pct = value * 100 / max
+	}
+	return template.CSS(fmt.Sprintf("%d%%", pct))
 }

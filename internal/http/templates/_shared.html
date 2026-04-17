@@ -13,7 +13,10 @@
 <header class="site"><nav>
   <a class="brand" href="/library">Shelf</a>
   <a href="/library" {{if eq .ActiveNav "library"}}class="active"{{end}}>Library</a>
-  <a href="/import" {{if eq .ActiveNav "import"}}class="active"{{end}}>Import</a>
+  <a href="/series"  {{if eq .ActiveNav "series"}}class="active"{{end}}>Series</a>
+  <a href="/stats"   {{if eq .ActiveNav "stats"}}class="active"{{end}}>Stats</a>
+  <a href="/add"     {{if eq .ActiveNav "add"}}class="active"{{end}}>Add</a>
+  <a href="/import"  {{if eq .ActiveNav "import"}}class="active"{{end}}>Import</a>
 </nav></header>
 {{end}}
 
@@ -24,6 +27,7 @@
 {{define "bookCard"}}
 <article class="book-card">
   <a href="{{safeHref .Filename}}">
+    {{if .Cover}}<img class="book-cover" src="{{.Cover}}" alt="Cover of {{.Title}}" loading="lazy">{{end}}
     <h3>{{.Title}}</h3>
     <p class="author">{{if .Authors}}{{join ", " .Authors}}{{else}}<em>unknown author</em>{{end}}</p>
     <div class="meta-row">

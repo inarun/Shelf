@@ -1,0 +1,29 @@
+{{define "series_list"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>Series — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main>
+    <h1>Series</h1>
+    <p class="muted">{{len .Series}} series tracked.</p>
+    {{if .Series}}
+      <ul class="series-list">
+        {{range .Series}}
+          <li>
+            <a href="/series/{{safeSeriesHref .Name}}"><strong>{{.Name}}</strong></a>
+            <span class="muted">{{.Finished}}/{{.BookCount}} finished</span>
+          </li>
+        {{end}}
+      </ul>
+    {{else}}
+      <p><em>No series yet. Add books with a <code>series</code> frontmatter field to populate this page.</em></p>
+    {{end}}
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

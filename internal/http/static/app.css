@@ -285,3 +285,119 @@ button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
+
+/* Covers + book cards */
+.book-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  background: var(--border);
+}
+.book-cover-large {
+  display: block;
+  width: 100%;
+  max-width: 18rem;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+  background: var(--border);
+}
+
+.cover-controls { margin-top: 0.75rem; }
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  cursor: pointer;
+}
+button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Add book page */
+.add-section { margin-top: 1.25rem; }
+.add-results { display: grid; gap: 0.75rem; margin-top: 1rem; }
+.add-result {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: 6rem 1fr auto;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+.add-result img {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: var(--border);
+  border-radius: 4px;
+}
+.add-result h3 { margin: 0; font-size: 1rem; }
+.add-result p { margin: 0; font-size: 0.9rem; color: var(--muted); }
+.add-result .add-actions { display: flex; flex-direction: column; gap: 0.4rem; }
+
+/* Series list */
+.series-list { list-style: none; padding: 0; }
+.series-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Stats */
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.stat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  text-align: center;
+}
+.stat-number {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.stat-label { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+.stats-table th, .stats-table td {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.stats-years td:nth-child(2), .stats-years td:nth-child(3) { width: 45%; }
+.bar-row { display: flex; align-items: center; gap: 0.5rem; }
+.bar-count {
+  min-width: 3.5rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.bar {
+  display: inline-block;
+  height: 0.6rem;
+  background: var(--accent);
+  border-radius: 3px;
+  min-width: 2px;
+}
+.bar-pages { background: var(--warn); }

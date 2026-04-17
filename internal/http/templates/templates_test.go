@@ -14,7 +14,8 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	for _, name := range []string{"library", "book_detail", "import", "error", "head", "nav", "scripts", "bookCard"} {
+	for _, name := range []string{"library", "book_detail", "import", "error", "head", "nav", "scripts", "bookCard",
+		"add", "series_list", "series_detail", "stats"} {
 		if tmpl.Lookup(name) == nil {
 			t.Errorf("template %q not defined", name)
 		}
@@ -27,28 +28,25 @@ func TestLibraryRendersBooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	rating := 4
-	data := struct {
-		CSRFToken, RequestID, ActiveNav string
-		Books                           []struct {
-			Filename, Title                string
-			Authors                        []string
-			Status, SeriesName             string
-			SeriesIndex                    any
-			Rating                         *int
-		}
-		Filter struct{ Status string }
-	}{
-		CSRFToken: "t", RequestID: "r", ActiveNav: "library",
-	}
-	data.Books = append(data.Books, struct {
+	type bookRow struct {
 		Filename, Title    string
 		Authors            []string
 		Status, SeriesName string
 		SeriesIndex        any
 		Rating             *int
+		Cover              string
+	}
+	data := struct {
+		CSRFToken, RequestID, ActiveNav string
+		Books                           []bookRow
+		Filter                          struct{ Status string }
 	}{
+		CSRFToken: "t", RequestID: "r", ActiveNav: "library",
+	}
+	data.Books = append(data.Books, bookRow{
 		Filename: "Hyperion by Dan Simmons.md", Title: "Hyperion",
 		Authors: []string{"Dan Simmons"}, Status: "reading", Rating: &rating,
+		Cover: "/covers/" + strings.Repeat("a", 64) + ".jpg",
 	})
 
 	var buf bytes.Buffer
@@ -88,6 +86,10 @@ func TestHTMLEscapesUserContent(t *testing.T) {
 			"Review":        `<script>alert('x')</script>`,
 			"TimelineLines": []string{},
 			"CanonicalName": true,
+			"Cover":         "",
+			"ISBN":          "",
+			"SeriesName":    "",
+			"SeriesIndex":   (*float64)(nil),
 		},
 	}
 	var buf bytes.Buffer

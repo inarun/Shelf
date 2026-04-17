@@ -291,6 +291,262 @@
     }
   }
 
+  // Add-book page: ISBN + search → preview cards → Add.
+  function initAddPage() {
+    if (!document.querySelector('main[data-page="add"]')) return;
+    const isbnForm = document.getElementById("isbn-form");
+    const searchForm = document.getElementById("search-form");
+    const host = document.getElementById("add-results");
+    if (!host) return;
+
+    if (isbnForm) {
+      isbnForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const isbnInput = isbnForm.querySelector('input[name="isbn"]');
+        const isbn = isbnInput ? isbnInput.value.replace(/[\s-]/g, "") : "";
+        if (!isbn) {
+          showBanner(host, "error", "ISBN is required.");
+          return;
+        }
+        host.textContent = "";
+        const resp = await api("POST", "/api/add/lookup", { isbn });
+        if (!resp.ok) {
+          showBanner(host, resp.status === 404 ? "warn" : "error",
+            errorText(resp.data, "Lookup failed."));
+          return;
+        }
+        renderLookup(host, resp.data.metadata);
+      });
+    }
+
+    if (searchForm) {
+      searchForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const qInput = searchForm.querySelector('input[name="q"]');
+        const q = qInput ? qInput.value.trim() : "";
+        if (!q) {
+          showBanner(host, "error", "Query is required.");
+          return;
+        }
+        host.textContent = "";
+        const resp = await api("POST", "/api/add/search", { q });
+        if (!resp.ok) {
+          showBanner(host, "error", errorText(resp.data, "Search failed."));
+          return;
+        }
+        renderSearchResults(host, resp.data.results || []);
+      });
+    }
+  }
+
+  async function resolveCover(ref) {
+    if (!ref) return "";
+    const resp = await api("POST", "/api/add/cover", { ref });
+    if (!resp.ok) return "";
+    return (resp.data && resp.data.cover) || "";
+  }
+
+  function renderLookup(host, md) {
+    host.textContent = "";
+    const heading = document.createElement("h2");
+    heading.textContent = "Preview";
+    host.appendChild(heading);
+    const card = makeResultCard({
+      title: md.title || "",
+      subtitle: md.subtitle || "",
+      authors: md.authors || [],
+      year: md.publish_date || "",
+      isbn: md.isbn_10 || md.isbn_13 || "",
+      publisher: md.publisher || "",
+      totalPages: md.total_pages || null,
+      coverRef: md.cover_ref || "",
+      onAdd: () => submitCreate({
+        title: md.title,
+        subtitle: md.subtitle,
+        authors: md.authors,
+        publisher: md.publisher,
+        publish_date: md.publish_date,
+        total_pages: md.total_pages,
+        isbn: md.isbn_10 || md.isbn_13,
+        categories: md.categories,
+        series: "",
+        series_index: null,
+        cover_ref: md.cover_ref,
+      }, card),
+    });
+    host.appendChild(card);
+  }
+
+  function renderSearchResults(host, results) {
+    host.textContent = "";
+    const heading = document.createElement("h2");
+    heading.textContent = "Results (" + results.length + ")";
+    host.appendChild(heading);
+    if (results.length === 0) {
+      const p = document.createElement("p");
+      p.innerHTML = "<em>No results.</em>";
+      host.appendChild(p);
+      return;
+    }
+    results.forEach((r) => {
+      const card = makeResultCard({
+        title: r.title || "",
+        subtitle: "",
+        authors: r.authors || [],
+        year: r.publish_year || "",
+        isbn: r.isbn || "",
+        publisher: "",
+        totalPages: null,
+        coverRef: r.cover_ref || "",
+        onAdd: () => {
+          // If the result has an ISBN, prefer a full lookup so we write
+          // richer frontmatter. Otherwise use what the search gave us.
+          if (r.isbn) {
+            lookupAndCreate(host, r.isbn, card, r.cover_ref);
+          } else {
+            submitCreate({
+              title: r.title,
+              authors: r.authors,
+              publish_date: r.publish_year,
+              cover_ref: r.cover_ref,
+            }, card);
+          }
+        },
+      });
+      host.appendChild(card);
+    });
+  }
+
+  async function lookupAndCreate(host, isbn, anchor, fallbackCoverRef) {
+    const resp = await api("POST", "/api/add/lookup", { isbn });
+    if (!resp.ok) {
+      showBanner(anchor, resp.status === 404 ? "warn" : "error",
+        errorText(resp.data, "Lookup failed."));
+      return;
+    }
+    const md = resp.data.metadata;
+    submitCreate({
+      title: md.title,
+      subtitle: md.subtitle,
+      authors: md.authors,
+      publisher: md.publisher,
+      publish_date: md.publish_date,
+      total_pages: md.total_pages,
+      isbn: md.isbn_10 || md.isbn_13,
+      categories: md.categories,
+      cover_ref: md.cover_ref || fallbackCoverRef,
+    }, anchor);
+  }
+
+  function makeResultCard(data) {
+    const card = document.createElement("article");
+    card.className = "add-result";
+
+    const imgWrap = document.createElement("div");
+    const img = document.createElement("img");
+    img.alt = data.title ? ("Cover of " + data.title) : "Cover";
+    imgWrap.appendChild(img);
+    card.appendChild(imgWrap);
+
+    const mid = document.createElement("div");
+    const h = document.createElement("h3");
+    h.textContent = data.title;
+    mid.appendChild(h);
+    if (data.subtitle) {
+      const sub = document.createElement("p");
+      sub.textContent = data.subtitle;
+      mid.appendChild(sub);
+    }
+    if ((data.authors || []).length > 0) {
+      const a = document.createElement("p");
+      a.textContent = data.authors.join(", ");
+      mid.appendChild(a);
+    }
+    const detailBits = [];
+    if (data.year) detailBits.push(data.year);
+    if (data.publisher) detailBits.push(data.publisher);
+    if (data.isbn) detailBits.push("ISBN " + data.isbn);
+    if (data.totalPages) detailBits.push(data.totalPages + " pages");
+    if (detailBits.length > 0) {
+      const d = document.createElement("p");
+      d.textContent = detailBits.join(" · ");
+      mid.appendChild(d);
+    }
+    card.appendChild(mid);
+
+    const actions = document.createElement("div");
+    actions.className = "add-actions";
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "primary";
+    addBtn.textContent = "Add this book";
+    addBtn.addEventListener("click", () => {
+      addBtn.disabled = true;
+      Promise.resolve(data.onAdd()).catch(() => { addBtn.disabled = false; });
+    });
+    actions.appendChild(addBtn);
+    card.appendChild(actions);
+
+    // Cover preview fetched server-side into /covers/ so CSP stays 'self'.
+    if (data.coverRef) {
+      resolveCover(data.coverRef).then((href) => {
+        if (href) img.src = href;
+      });
+    }
+    return card;
+  }
+
+  async function submitCreate(body, anchor) {
+    // The server ignores any cover field not already in our cache, so
+    // fetch the cover first (if the caller gave us a ref) and pass the
+    // resulting /covers/... path into the create payload.
+    let cover = "";
+    if (body.cover_ref) {
+      cover = await resolveCover(body.cover_ref);
+    }
+    const payload = Object.assign({}, body, { cover });
+    delete payload.cover_ref;
+    const resp = await api("POST", "/api/add/create", payload);
+    if (!resp.ok) {
+      showBanner(anchor || document.body,
+        resp.status === 409 ? "warn" : "error",
+        errorText(resp.data, "Could not add book."));
+      return;
+    }
+    if (resp.data && resp.data.url) {
+      window.location.href = resp.data.url;
+    } else {
+      window.location.href = "/library";
+    }
+  }
+
+  // Book detail: manual cover refresh.
+  function initCoverControls() {
+    const host = document.querySelector("[data-cover-controls]");
+    if (!host) return;
+    const btn = host.querySelector("#refresh-cover-btn");
+    if (!btn) return;
+    const filename = host.getAttribute("data-filename") || "";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const resp = await api(
+        "POST",
+        "/api/books/" + encodeURIComponent(filename) + "/cover",
+        {},
+      );
+      btn.disabled = false;
+      if (!resp.ok) {
+        showBanner(host.closest("main") || document.body,
+          resp.status === 404 ? "warn" : "error",
+          errorText(resp.data, "Could not refresh cover."));
+        return;
+      }
+      showBanner(host.closest("main") || document.body, "ok",
+        "Cover saved. Reloading…");
+      setTimeout(() => window.location.reload(), 500);
+    });
+  }
+
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     if (window.location.protocol !== "https:" &&
@@ -308,6 +564,8 @@
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
     document.querySelectorAll("[data-review-form]").forEach(initReview);
     initImport();
+    initAddPage();
+    initCoverControls();
     registerServiceWorker();
   });
 })();

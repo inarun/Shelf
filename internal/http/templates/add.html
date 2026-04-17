@@ -1,0 +1,39 @@
+{{define "add"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>Add book — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main data-page="add">
+    <h1>Add a book</h1>
+    {{if not .ProviderWired}}
+      <div class="banner error">The Open Library provider is not configured. Add-book is disabled.</div>
+    {{else}}
+    <p class="muted">Lookup by ISBN or search by title/author. Previewed data comes from Open Library; nothing is written until you click <em>Add this book</em>. Covers are downloaded only when you preview a result.</p>
+
+    <section class="add-section">
+      <h2>By ISBN</h2>
+      <form id="isbn-form" class="filter-bar">
+        <label>ISBN: <input type="text" name="isbn" autocomplete="off" inputmode="numeric" pattern="[0-9Xx\- ]{10,17}" required></label>
+        <button type="submit" class="primary">Look up</button>
+      </form>
+    </section>
+
+    <section class="add-section">
+      <h2>Search</h2>
+      <form id="search-form" class="filter-bar">
+        <label>Query: <input type="text" name="q" autocomplete="off" maxlength="256" required></label>
+        <button type="submit" class="primary">Search</button>
+      </form>
+    </section>
+
+    <section id="add-results" aria-live="polite"></section>
+    {{end}}
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

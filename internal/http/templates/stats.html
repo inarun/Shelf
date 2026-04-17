@@ -1,0 +1,72 @@
+{{define "stats"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>Stats — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main>
+    <h1>Stats</h1>
+
+    <section class="stats-summary">
+      <div class="stat-card">
+        <div class="stat-number">{{.Summary.TotalBooks}}</div>
+        <div class="stat-label">books indexed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{{.Summary.TotalReads}}</div>
+        <div class="stat-label">lifetime reads</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{{if .Summary.RatedBooks}}{{printf "%.2f" .Summary.AverageRating}}{{else}}—{{end}}</div>
+        <div class="stat-label">average rating ({{.Summary.RatedBooks}} rated)</div>
+      </div>
+    </section>
+
+    <h2>By status</h2>
+    <table class="stats-table">
+      <thead><tr><th>Status</th><th>Books</th></tr></thead>
+      <tbody>
+        {{range .OrderedStatus}}
+          <tr><td><span class="status {{statusClass .}}">{{statusLabel .}}</span></td>
+              <td>{{index $.Summary.StatusCounts .}}</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+
+    <h2>Per year</h2>
+    {{if .Years}}
+      <table class="stats-table stats-years">
+        <thead><tr><th>Year</th><th>Books</th><th>Pages</th></tr></thead>
+        <tbody>
+          {{$maxB := .MaxYearBooks}}
+          {{$maxP := .MaxYearPages}}
+          {{range .Years}}
+            <tr>
+              <th scope="row">{{.Year}}</th>
+              <td>
+                <div class="bar-row">
+                  <span class="bar-count">{{.Books}}</span>
+                  <span class="bar" style="width: {{barWidth .Books $maxB}}"></span>
+                </div>
+              </td>
+              <td>
+                <div class="bar-row">
+                  <span class="bar-count">{{.Pages}}</span>
+                  <span class="bar bar-pages" style="width: {{barWidth .Pages $maxP}}"></span>
+                </div>
+              </td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    {{else}}
+      <p><em>No finished reads yet — mark a book as finished to start the per-year breakdown.</em></p>
+    {{end}}
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}
