@@ -206,7 +206,10 @@ func TestHealth(t *testing.T) {
 	d, _ := seedDeps(t)
 	rec := httptest.NewRecorder()
 	d.Health(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
+	if rec.Code != http.StatusOK || rec.Body.String() != HealthSignature {
 		t.Errorf("healthz: %d %q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(HealthSignature, "shelf") {
+		t.Errorf("HealthSignature must contain 'shelf' so the single-instance probe can match; got %q", HealthSignature)
 	}
 }

@@ -162,10 +162,18 @@ func (d *Dependencies) ImportPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Health is the plaintext liveness probe.
+// HealthSignature is the stable token emitted by /healthz. The
+// single-instance probe in internal/platform/singleton checks for it
+// so "something is listening on our port" can be distinguished from
+// "another Shelf is listening on our port." Keep the value stable
+// across releases.
+const HealthSignature = "shelf ok"
+
+// Health is the plaintext liveness probe. The response body is the
+// HealthSignature constant, which the single-instance probe looks for.
 func (d *Dependencies) Health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("ok"))
+	_, _ = w.Write([]byte(HealthSignature))
 }
 
 // NotFoundHandler is installed as the default route handler for the
