@@ -68,34 +68,37 @@ func isReservedWindowsName(name string) bool {
 // documented as future work.
 const maxPathRunes = 260
 
-// ValidateWithinVault resolves candidate to a canonical absolute path and
-// asserts it lives under booksAbs. It rejects:
+// ValidateWithinRoot resolves candidate to a canonical absolute path and
+// asserts it lives under rootAbs. It rejects:
 //
 //   - null bytes anywhere in the input
-//   - path traversal (..) that escapes the Books folder, both via string
+//   - path traversal (..) that escapes the root, both via string
 //     cleaning and via symlink resolution on the parent directory
 //   - reserved Windows names in any path component (CON, PRN, AUX, NUL,
 //     COM0–9, LPT0–9; case-insensitive; reserved regardless of extension)
 //   - paths longer than 260 runes (Windows MAX_PATH)
 //
-// Candidate may be relative (interpreted against booksAbs) or absolute.
-// booksAbs must itself be an absolute, cleaned, existing directory — the
-// caller is expected to have validated it at config-load time.
+// Candidate may be relative (interpreted against rootAbs) or absolute.
+// rootAbs must itself be an absolute, cleaned, existing directory — the
+// caller is expected to have validated it beforehand.
 //
 // For paths whose target file does not yet exist, symlink resolution runs
 // on the parent directory. This handles the common case of "about to
-// create a new book file" without requiring the file to exist first.
-func ValidateWithinVault(booksAbs, candidate string) (string, error) {
+// create a new file" without requiring the file to exist first.
+//
+// ValidateWithinRoot is a general-purpose primitive; see ValidateWithinVault
+// for the books-folder wrapper that the vault layer uses.
+func ValidateWithinRoot(rootAbs, candidate string) (string, error) {
 	if strings.ContainsRune(candidate, 0) {
 		return "", errors.New("path contains a null byte")
 	}
-	if !filepath.IsAbs(booksAbs) {
-		return "", fmt.Errorf("books folder %q must be absolute", booksAbs)
+	if !filepath.IsAbs(rootAbs) {
+		return "", fmt.Errorf("root %q must be absolute", rootAbs)
 	}
 
 	abs := candidate
 	if !filepath.IsAbs(abs) {
-		abs = filepath.Join(booksAbs, abs)
+		abs = filepath.Join(rootAbs, abs)
 	}
 	abs = filepath.Clean(abs)
 
@@ -106,17 +109,17 @@ func ValidateWithinVault(booksAbs, candidate string) (string, error) {
 	// String-level prefix check catches pure ".." traversal even before
 	// symlinks are involved; symlink resolution below catches escapes
 	// that only appear after EvalSymlinks.
-	relPre, err := filepath.Rel(filepath.Clean(booksAbs), abs)
+	relPre, err := filepath.Rel(filepath.Clean(rootAbs), abs)
 	if err != nil {
 		return "", fmt.Errorf("filepath.Rel: %w", err)
 	}
 	if relPre == ".." || strings.HasPrefix(relPre, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %q escapes books folder %q", abs, booksAbs)
+		return "", fmt.Errorf("path %q escapes root %q", abs, rootAbs)
 	}
 
-	resolvedBooks, err := filepath.EvalSymlinks(booksAbs)
+	resolvedRoot, err := filepath.EvalSymlinks(rootAbs)
 	if err != nil {
-		return "", fmt.Errorf("resolving books folder: %w", err)
+		return "", fmt.Errorf("resolving root: %w", err)
 	}
 
 	// The leaf file may not exist yet; resolve symlinks on the parent
@@ -129,17 +132,17 @@ func ValidateWithinVault(booksAbs, candidate string) (string, error) {
 	resolvedAbs := filepath.Join(resolvedParent, filepath.Base(abs))
 
 	// Canonical prefix check post-symlink-resolution.
-	relPost, err := filepath.Rel(resolvedBooks, resolvedAbs)
+	relPost, err := filepath.Rel(resolvedRoot, resolvedAbs)
 	if err != nil {
 		return "", fmt.Errorf("filepath.Rel (post-resolve): %w", err)
 	}
 	if relPost == ".." || strings.HasPrefix(relPost, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("resolved path %q escapes books folder %q (symlink escape)", resolvedAbs, resolvedBooks)
+		return "", fmt.Errorf("resolved path %q escapes root %q (symlink escape)", resolvedAbs, resolvedRoot)
 	}
 
-	// Check every component of the resolved path (below booksAbs) for
+	// Check every component of the resolved path (below rootAbs) for
 	// reserved Windows names. Upstream components are the caller's
-	// responsibility — they're part of the configured books path.
+	// responsibility — they're part of the configured root.
 	for _, comp := range strings.Split(relPost, string(filepath.Separator)) {
 		if comp == "" || comp == "." {
 			continue
@@ -150,4 +153,12 @@ func ValidateWithinVault(booksAbs, candidate string) (string, error) {
 	}
 
 	return resolvedAbs, nil
+}
+
+// ValidateWithinVault is the books-folder-specific wrapper around
+// ValidateWithinRoot. Every filesystem operation that writes into the Books
+// folder must pass its candidate path through this function. Other roots
+// (like the backups directory) should call ValidateWithinRoot directly.
+func ValidateWithinVault(booksAbs, candidate string) (string, error) {
+	return ValidateWithinRoot(booksAbs, candidate)
 }

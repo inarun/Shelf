@@ -249,6 +249,68 @@ func TestValidateWithinVault_SymlinkEscape(t *testing.T) {
 	}
 }
 
+// setupGenericRoot creates a temp directory as an arbitrary root (not
+// necessarily the Books folder) and returns its canonical absolute path.
+// Mirrors setupBooks but decoupled from the Books-folder name.
+func setupGenericRoot(t *testing.T, name string) string {
+	t.Helper()
+	dir := t.TempDir()
+	root := filepath.Join(dir, name)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
+func TestValidateWithinRoot_Generic(t *testing.T) {
+	root := setupGenericRoot(t, "backups")
+	// The leaf file may not exist yet, but the parent directory must —
+	// matching the vault-candidate case.
+	if err := os.MkdirAll(filepath.Join(root, "books-20260417T103045Z"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ValidateWithinRoot(root, "books-20260417T103045Z/Hyperion.md")
+	if err != nil {
+		t.Fatalf("ValidateWithinRoot: %v", err)
+	}
+	if !strings.HasPrefix(got, root) {
+		t.Errorf("returned %q not under root %q", got, root)
+	}
+}
+
+func TestValidateWithinRoot_TraversalRejected(t *testing.T) {
+	root := setupGenericRoot(t, "backups")
+	_, err := ValidateWithinRoot(root, "../escape.md")
+	if err == nil {
+		t.Fatal("expected traversal error")
+	}
+	if !strings.Contains(err.Error(), "escape") {
+		t.Errorf("expected escape error, got: %v", err)
+	}
+}
+
+func TestValidateWithinRoot_ReservedInComponent(t *testing.T) {
+	root := setupGenericRoot(t, "backups")
+	_, err := ValidateWithinRoot(root, "CON.md")
+	if err == nil {
+		t.Fatal("expected reserved-name rejection")
+	}
+	if !strings.Contains(err.Error(), "reserved Windows name") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateWithinRoot_NonAbsoluteRoot(t *testing.T) {
+	_, err := ValidateWithinRoot("relative/root", "file.md")
+	if err == nil {
+		t.Fatal("expected non-absolute root to be rejected")
+	}
+}
+
 func TestIsReservedWindowsName(t *testing.T) {
 	cases := []struct {
 		in   string
