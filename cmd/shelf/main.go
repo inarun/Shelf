@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/inarun/Shelf/internal/config"
+	"github.com/inarun/Shelf/internal/covers"
 	"github.com/inarun/Shelf/internal/http/handlers"
 	httpserver "github.com/inarun/Shelf/internal/http/server"
 	"github.com/inarun/Shelf/internal/index/store"
@@ -32,6 +33,7 @@ import (
 	"github.com/inarun/Shelf/internal/platform/autostart"
 	"github.com/inarun/Shelf/internal/platform/browser"
 	"github.com/inarun/Shelf/internal/platform/singleton"
+	"github.com/inarun/Shelf/internal/providers/metadata/openlibrary"
 	"github.com/inarun/Shelf/internal/tray"
 	"github.com/inarun/Shelf/internal/vault/watcher"
 )
@@ -99,10 +101,16 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 
 	booksAbs := cfg.BooksAbsolutePath()
 	backupsRoot := filepath.Join(cfg.Data.Directory, "backups")
+	coversRoot := filepath.Join(cfg.Data.Directory, "covers")
 	dbPath := filepath.Join(cfg.Data.Directory, "shelf.db")
 
 	if err := os.MkdirAll(backupsRoot, 0o700); err != nil {
 		return fmt.Errorf("create backups dir: %w", err)
+	}
+
+	coverCache, err := covers.New(coversRoot)
+	if err != nil {
+		return fmt.Errorf("init covers cache: %w", err)
 	}
 
 	st, err := store.Open(dbPath)
@@ -112,6 +120,10 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 	defer func() { _ = st.Close() }()
 
 	sy := syncpkg.New(st, booksAbs)
+
+	// Open Library metadata provider. Every outbound request enforces
+	// its own timeout + size cap + host allowlist — see internal/providers/metadata/openlibrary.
+	olClient := openlibrary.New()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -140,6 +152,8 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		Config:      cfg,
 		Store:       st,
 		Syncer:      sy,
+		Metadata:    olClient,
+		Covers:      coverCache,
 		BooksAbs:    booksAbs,
 		BackupsRoot: backupsRoot,
 		DataDir:     cfg.Data.Directory,

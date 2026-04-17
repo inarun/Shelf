@@ -9,11 +9,13 @@ import (
 	"log/slog"
 
 	"github.com/inarun/Shelf/internal/config"
+	"github.com/inarun/Shelf/internal/covers"
 	"github.com/inarun/Shelf/internal/http/handlers"
 	"github.com/inarun/Shelf/internal/http/middleware"
 	"github.com/inarun/Shelf/internal/http/templates"
 	"github.com/inarun/Shelf/internal/index/store"
 	"github.com/inarun/Shelf/internal/index/sync"
+	"github.com/inarun/Shelf/internal/providers/metadata"
 
 	"net/http"
 )
@@ -21,10 +23,13 @@ import (
 // Dependencies holds everything New needs from the bootstrap layer.
 // Config is passed rather than just Bind/Port so future middlewares
 // can consult other fields without changing this struct's shape.
+// Metadata and Covers may be nil; handlers return 503 in that case.
 type Dependencies struct {
 	Config      *config.Config
 	Store       *store.Store
 	Syncer      *sync.Syncer
+	Metadata    metadata.Provider
+	Covers      *covers.Cache
 	BooksAbs    string
 	BackupsRoot string
 	DataDir     string
@@ -59,6 +64,8 @@ func New(deps Dependencies) (*Server, error) {
 	handlerDeps := &handlers.Dependencies{
 		Store:       deps.Store,
 		Syncer:      deps.Syncer,
+		Metadata:    deps.Metadata,
+		Covers:      deps.Covers,
 		BooksAbs:    deps.BooksAbs,
 		BackupsRoot: deps.BackupsRoot,
 		DataDir:     deps.DataDir,
