@@ -2,7 +2,7 @@
 
 **Authoritative spec for the Shelf project.** Load this file at the start of every Claude Code session. Every architectural decision, filename, schema, and rule in this document is binding. If a user request contradicts this document, raise the contradiction and ask before proceeding.
 
-Last updated: 2026-04-16 (v0.1 pre-build)
+Last updated: 2026-04-17 (Session 6 complete — v0.1 shipped)
 
 ---
 
@@ -411,8 +411,8 @@ Session 4 (HTTP + UI):
 Session 5 (Windows integration):
 - System tray, autostart registration, browser open, PWA manifest and service worker
 
-Session 6 (polish):
-- Add-book flow with Open Library, cover caching, series view, stats page
+Session 6 (polish) — **complete as of 2026-04-17**:
+- Add-book flow with Open Library, cover caching, series view, stats page, procedural PWA/tray icons
 
 ### v0.2 — Audiobookshelf sync (future)
 
@@ -471,8 +471,9 @@ Requires: Host header validation extended to allow Tailscale addresses; PWA layo
 - ~~**Series frontmatter fields:**~~ *Resolved 2026-04-16 (Session 2).* `series` (string) + `series_index` (number). See §Frontmatter schema.
 - ~~**Windows autostart mechanism:**~~ *Resolved 2026-04-17 (Session 5).* `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` — per-user, no elevation, no Task Scheduler dependency. Implementation in `internal/platform/autostart` via `golang.org/x/sys/windows/registry`. User controls enable/disable through the tray menu only (no TOML flag); the registry value is the current binary path, quoted, with the original `--config` flag preserved if the user launched with one.
 - ~~**System tray library selection:**~~ *Resolved 2026-04-17 (Session 5).* Direct Win32 via `syscall.NewLazyDLL` + `golang.org/x/sys/windows` — no third-party tray dependency. Implementation in `internal/tray` behind `//go:build windows`, with `tray_other.go` returning `ErrNotSupported` on non-Windows so `cmd/shelf` runs headless in dev. Menu: Open Shelf / Start with Windows (checkable) / Quit. Icon is stock `IDI_APPLICATION` for v0.1; custom .ico deferred to Session 6.
-- ~~**PWA icon assets:**~~ *Deferred 2026-04-17 (Session 5).* `manifest.webmanifest` references `/static/favicon.svg` only for v0.1 — Chromium-based browsers accept SVG in manifest icons. 192/512 PNG raster icons + Windows .ico for the tray are Session 6 polish pending source art from the user.
+- ~~**PWA icon assets:**~~ *Resolved 2026-04-17 (Session 6).* Raster icons are generated procedurally from pure geometry (rounded-square accent-color background with three stacked "shelf + book spines" bands) by `cmd/gen-icons/main.go` — a one-shot utility tagged `//go:build ignore` so `go build ./...` skips it. It writes `internal/http/static/icon-192.png` + `icon-512.png` (embedded + listed in `manifest.webmanifest` as `purpose: any maskable`) and `internal/tray/icon.ico` (16/32/48 PNG-embedded entries). The tray loads the ICO bytes via `//go:embed`, calls `LookupIconIdFromDirectoryEx` + `CreateIconFromResourceEx` at the system `SM_CXSMICON` metric, and falls back to stock `IDI_APPLICATION` if the embed parse fails. Run `go run cmd/gen-icons/main.go` to regenerate.
 - **Single-instance semantics** (added 2026-04-17, Session 5): a second `shelf.exe` launch probes `127.0.0.1:<port>/healthz` for the Shelf signature (`HealthSignature` = `"shelf ok"`); if found, opens `/library` in the default browser and exits 0. Otherwise it starts as primary. No named-mutex lock; a genuine port collision with an unrelated service still produces a clear bind error on startup.
+- **Open Library contract** (added 2026-04-17, Session 6): Shelf hits exactly two hosts — `openlibrary.org` for metadata and `covers.openlibrary.org` for cover images. `LookupByISBN` uses `/api/books?bibkeys=ISBN:<n>&format=json&jscmd=data` (author names resolved inline, no follow-up OLID fetch). `Search` uses `/search.json?q=<q>&limit=10&fields=key,title,author_name,first_publish_year,isbn,cover_i`. Covers use `/b/{id|olid|isbn}/<value>-L.jpg?default=false` so "no cover" returns 404 instead of a placeholder. Every request enforces a 15s timeout, a 512 KiB JSON cap, a 2 MiB cover cap, a fixed User-Agent (`Shelf/0.1 (+https://github.com/inarun/Shelf)`), a same-host redirect cap of 3, and Content-Type validation (`application/json` for metadata; `image/jpeg`/`image/png` only for covers). ISBN values are normalized + digit-only-validated before URL interpolation; search queries are `url.QueryEscape`'d. No auth, no cookies, no telemetry.
 
 ---
 
