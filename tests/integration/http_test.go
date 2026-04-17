@@ -231,6 +231,58 @@ func TestEndToEnd_EvilHostRejected(t *testing.T) {
 	}
 }
 
+func TestEndToEnd_PWAAndHealthz(t *testing.T) {
+	base, _, cleanup := buildServer(t)
+	defer cleanup()
+	client := &http.Client{}
+
+	// /manifest.webmanifest: expected content-type, starts with { and mentions start_url.
+	resp := doReq(t, client, http.MethodGet, base+"/manifest.webmanifest", nil, nil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("manifest status = %d; body=%s", resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/manifest+json") {
+		t.Errorf("manifest Content-Type = %q, want application/manifest+json...", got)
+	}
+	if !strings.Contains(string(body), "\"start_url\"") {
+		t.Errorf("manifest missing start_url: %s", body)
+	}
+	// CSP still applied to manifest responses.
+	if resp.Header.Get("Content-Security-Policy") == "" {
+		t.Errorf("manifest missing CSP")
+	}
+
+	// /sw.js: root-scope service worker.
+	resp = doReq(t, client, http.MethodGet, base+"/sw.js", nil, nil)
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("sw.js status = %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/javascript") {
+		t.Errorf("sw.js Content-Type = %q", got)
+	}
+	if got := resp.Header.Get("Service-Worker-Allowed"); got != "/" {
+		t.Errorf("sw.js Service-Worker-Allowed = %q, want /", got)
+	}
+	if !strings.Contains(string(body), "addEventListener(\"fetch\"") {
+		t.Errorf("sw.js body missing fetch listener")
+	}
+
+	// /healthz: signature body so the single-instance probe can detect us.
+	resp = doReq(t, client, http.MethodGet, base+"/healthz", nil, nil)
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("healthz status = %d", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), "shelf") {
+		t.Errorf("healthz body = %q, want containing 'shelf'", body)
+	}
+}
+
 func TestEndToEnd_PatchWithoutCSRF403(t *testing.T) {
 	base, _, cleanup := buildServer(t)
 	defer cleanup()
