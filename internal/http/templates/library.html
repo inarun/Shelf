@@ -1,0 +1,40 @@
+{{define "library"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>Library — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main>
+    <h1>Library</h1>
+    <p class="muted">{{len .Books}} book{{pluralS (len .Books)}}{{if .Filter.Status}} — filtered by status: <code>{{.Filter.Status}}</code>{{end}}</p>
+
+    <form class="filter-bar" method="get" action="/library">
+      <label>Status:
+        <select name="status">
+          <option value="" {{if eq .Filter.Status ""}}selected{{end}}>all</option>
+          <option value="unread"   {{if eq .Filter.Status "unread"}}selected{{end}}>unread</option>
+          <option value="reading"  {{if eq .Filter.Status "reading"}}selected{{end}}>reading</option>
+          <option value="paused"   {{if eq .Filter.Status "paused"}}selected{{end}}>paused</option>
+          <option value="finished" {{if eq .Filter.Status "finished"}}selected{{end}}>finished</option>
+          <option value="dnf"      {{if eq .Filter.Status "dnf"}}selected{{end}}>dnf</option>
+        </select>
+      </label>
+      <button type="submit" class="primary">Filter</button>
+      {{if .Filter.Status}}<a href="/library">Clear</a>{{end}}
+    </form>
+
+    {{if .Books}}
+      <div class="book-grid">
+        {{range .Books}}{{template "bookCard" .}}{{end}}
+      </div>
+    {{else}}
+      <p><em>No books in the index yet. Drop some <code>.md</code> files into your Books folder, or run an import.</em></p>
+    {{end}}
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

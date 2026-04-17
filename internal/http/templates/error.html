@@ -1,0 +1,18 @@
+{{define "error"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>{{.Status}} — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main>
+    <h1>{{.Status}}</h1>
+    <p>{{.Message}}</p>
+    {{if .RequestID}}<p class="muted"><small>Request ID: <code>{{.RequestID}}</code></small></p>{{end}}
+    <p><a href="/library">Back to library</a></p>
+  </main>
+</body>
+</html>
+{{end}}

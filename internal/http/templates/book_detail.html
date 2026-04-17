@@ -1,0 +1,77 @@
+{{define "book_detail"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>{{.Book.Title}} — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main>
+    <p><a href="/library">&larr; Library</a></p>
+    <article class="book-detail" data-filename="{{.Book.Filename}}">
+      <aside>
+        <h1>{{.Book.Title}}{{if not .Book.CanonicalName}}<span class="non-canonical-pill" title="Filename does not match Title by Author.md">non-canonical filename</span>{{end}}</h1>
+        {{if .Book.Subtitle}}<p class="muted">{{.Book.Subtitle}}</p>{{end}}
+        <p class="authors">{{if .Book.Authors}}{{join ", " .Book.Authors}}{{else}}<em>unknown author</em>{{end}}</p>
+        <dl>
+          {{if .Book.SeriesName}}<dt>Series</dt><dd>{{.Book.SeriesName}}{{if .Book.SeriesIndex}} #{{.Book.SeriesIndex}}{{end}}</dd>{{end}}
+          {{if .Book.Publisher}}<dt>Publisher</dt><dd>{{.Book.Publisher}}</dd>{{end}}
+          {{if .Book.PublishDate}}<dt>Published</dt><dd>{{.Book.PublishDate}}</dd>{{end}}
+          {{if .Book.TotalPages}}<dt>Pages</dt><dd>{{.Book.TotalPages}}</dd>{{end}}
+          {{if .Book.ISBN}}<dt>ISBN</dt><dd>{{.Book.ISBN}}</dd>{{end}}
+          {{if .Book.Format}}<dt>Format</dt><dd>{{.Book.Format}}</dd>{{end}}
+          {{if .Book.Source}}<dt>Source</dt><dd>{{.Book.Source}}</dd>{{end}}
+          <dt>Read count</dt><dd>{{.Book.ReadCount}}</dd>
+          {{if .Book.Categories}}<dt>Categories</dt><dd>{{join ", " .Book.Categories}}</dd>{{end}}
+        </dl>
+      </aside>
+
+      <section>
+        {{if .Warnings}}
+          {{range .Warnings}}<div class="banner warn">{{.}}</div>{{end}}
+        {{end}}
+
+        <h2>Rating</h2>
+        <div class="rating-widget" data-rating-widget data-filename="{{.Book.Filename}}">
+          {{range $i := .RatingRange}}
+            <button type="button" data-rating="{{$i}}" aria-pressed="{{if $.Book.Rating}}{{if le $i (deref $.Book.Rating)}}true{{else}}false{{end}}{{else}}false{{end}}">{{$i}}</button>
+          {{end}}
+        </div>
+
+        <h2>Status</h2>
+        <div data-status-select data-filename="{{.Book.Filename}}">
+          <label class="sr-only" for="status-select">Status</label>
+          <select id="status-select">
+            <option value="unread"   {{if eq .Book.Status "unread"}}selected{{end}}>unread</option>
+            <option value="reading"  {{if eq .Book.Status "reading"}}selected{{end}}>reading</option>
+            <option value="paused"   {{if eq .Book.Status "paused"}}selected{{end}}>paused</option>
+            <option value="finished" {{if eq .Book.Status "finished"}}selected{{end}}>finished</option>
+            <option value="dnf"      {{if eq .Book.Status "dnf"}}selected{{end}}>dnf</option>
+          </select>
+        </div>
+
+        <h2>Review</h2>
+        <form class="review-form" data-review-form data-filename="{{.Book.Filename}}">
+          <label class="sr-only" for="review-textarea">Review</label>
+          <textarea id="review-textarea" name="review" placeholder="Your notes and review…">{{.Book.Review}}</textarea>
+          <div><button type="submit" class="primary">Save review</button></div>
+        </form>
+
+        <h2>Reading timeline</h2>
+        <section class="timeline">
+          {{if .Book.TimelineLines}}
+            <ul>
+              {{range .Book.TimelineLines}}<li>{{.}}</li>{{end}}
+            </ul>
+          {{else}}
+            <p class="muted"><em>No timeline entries yet.</em></p>
+          {{end}}
+        </section>
+      </section>
+    </article>
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}
