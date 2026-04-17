@@ -66,6 +66,31 @@ func TestAppendNotes_EmptySection(t *testing.T) {
 	}
 }
 
+func TestNotes_Getter(t *testing.T) {
+	t.Run("absent section", func(t *testing.T) {
+		b := &Body{}
+		if got := b.Notes(); got != "" {
+			t.Errorf("empty body Notes() = %q, want \"\"", got)
+		}
+	})
+	t.Run("populated section", func(t *testing.T) {
+		b, err := Parse([]byte("# Hyperion\n\n## Notes\n\nhello world\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := b.Notes(); !strings.Contains(got, "hello world") {
+			t.Errorf("Notes() = %q, missing expected text", got)
+		}
+	})
+	t.Run("round-trips SetNotes", func(t *testing.T) {
+		b := &Body{}
+		b.SetNotes("fresh text")
+		if got := b.Notes(); got != "fresh text" {
+			t.Errorf("Notes() = %q, want %q", got, "fresh text")
+		}
+	})
+}
+
 func TestSetNotes_DirtyRegeneratesOnlyNotesBlock(t *testing.T) {
 	input := []byte("# Hyperion\n\nRating — 4/5\n\n## Notes\n\nold\n\n## Actions\n\n- TODO\n")
 	b, err := Parse(input)
