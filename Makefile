@@ -13,12 +13,29 @@ STATICCHECK  := honnef.co/go/tools/cmd/staticcheck@v0.7.0
 GOSEC        := github.com/securego/gosec/v2/cmd/gosec@latest
 GOVULNCHECK  := golang.org/x/vuln/cmd/govulncheck@latest
 
-.PHONY: all build test vet staticcheck gosec govulncheck lint-all fmt tidy clean
+.PHONY: all build test vet staticcheck gosec govulncheck lint-all fmt tidy clean update update-check
 
 all: lint-all test build
 
 build:
 	$(GO) build -o $(BIN_EXE) ./cmd/shelf
+
+# Update from origin/main: stop a running instance, fast-forward pull,
+# rebuild. Safe to force-kill because every vault write goes through
+# internal/vault/atomic and shelf.db uses SQLite WAL (see SKILL.md
+# §Concurrent edit handling). Leading `-` and `2>/dev/null` swallow the
+# "process not found" error when nothing is running.
+update:
+	-@taskkill /F /IM $(BIN_EXE) 2>/dev/null
+	git pull --ff-only
+	$(GO) build -o $(BIN_EXE) ./cmd/shelf
+	@echo "Update complete. Run ./$(BIN_EXE) to launch."
+
+# Peek at origin/main without modifying the working tree. Prints the
+# commits on origin/main not yet in local HEAD.
+update-check:
+	@git fetch --quiet
+	@git log HEAD..origin/main --oneline
 
 # Default `test` skips -race because on Windows the race detector requires cgo
 # and a C compiler (not bundled with Go). `test-race` enables both, which is
