@@ -90,26 +90,49 @@
   function initRating(widget) {
     const filename = widget.getAttribute("data-filename");
     const buttons = widget.querySelectorAll("button[data-rating]");
+
+    // paint flips aria-pressed on every button so stars 1..val are "on".
+    // Passing null clears — used both for optimistic apply and rollback.
+    function paint(val) {
+      buttons.forEach((b) => {
+        const v = parseInt(b.getAttribute("data-rating"), 10);
+        b.setAttribute("aria-pressed", val !== null && v <= val ? "true" : "false");
+      });
+    }
+
+    function currentVal() {
+      let max = 0;
+      buttons.forEach((b) => {
+        if (b.getAttribute("aria-pressed") === "true") {
+          const v = parseInt(b.getAttribute("data-rating"), 10);
+          if (Number.isFinite(v) && v > max) max = v;
+        }
+      });
+      return max > 0 ? max : null;
+    }
+
     buttons.forEach((btn) => {
       btn.addEventListener("click", () => withBusy(btn, async () => {
         const val = parseInt(btn.getAttribute("data-rating"), 10);
         if (!Number.isFinite(val)) return;
+        const prev = currentVal();
         const next = btn.getAttribute("aria-pressed") === "true" ? null : val;
+        // Optimistic: flip the UI immediately so clicks feel instant.
+        paint(next);
         const resp = await api(
           "PATCH",
           "/api/books/" + encodeURIComponent(filename),
           { rating: next },
         );
         if (resp.ok) {
-          buttons.forEach((b) => {
-            const v = parseInt(b.getAttribute("data-rating"), 10);
-            b.setAttribute("aria-pressed", next !== null && v <= next ? "true" : "false");
-          });
           toast("ok", next === null ? "Rating cleared" : "Rated " + next + (next === 1 ? " star" : " stars"));
-        } else if (resp.status === 409) {
-          toast("warn", errorText(resp.data, "This note changed outside Shelf. Reload and try again."));
         } else {
-          toast("error", errorText(resp.data, "Could not save rating."));
+          paint(prev);  // revert
+          if (resp.status === 409) {
+            toast("warn", errorText(resp.data, "This note changed outside Shelf. Reload and try again."));
+          } else {
+            toast("error", errorText(resp.data, "Could not save rating."));
+          }
         }
       }));
     });
@@ -239,9 +262,7 @@
     conflictsSection.appendChild(h);
     (plan.conflicts || []).forEach((c, idx) => {
       const row = document.createElement("div");
-      row.className = "diff-conflict";
-      row.style.padding = "0.5rem";
-      row.style.marginBottom = "0.5rem";
+      row.className = "diff-conflict-row";
       row.setAttribute("data-conflict-row", String(idx));
       row.setAttribute("data-filename", c.filename);
 
@@ -269,7 +290,7 @@
     if (entries.length === 0) {
       const p = document.createElement("p");
       p.textContent = "None.";
-      p.style.color = "var(--muted)";
+      p.className = "muted";
       section.appendChild(p);
       return section;
     }
@@ -292,7 +313,7 @@
 
   function makeRadio(name, value, label, checked) {
     const l = document.createElement("label");
-    l.style.marginRight = "0.75rem";
+    l.className = "conflict-radio";
     const i = document.createElement("input");
     i.type = "radio";
     i.name = name;
@@ -606,6 +627,98 @@
     });
   }
 
+  // initShortcuts wires document-level keyboard shortcuts:
+  //   /            — focus the first filter/search input on the page
+  //   g then l|s|a|i (within 600 ms) — navigate to /library, /series, /add, /import
+  //   ?            — toggle the help overlay
+  //   Esc          — close the overlay, or blur the current input
+  //
+  // Keys are ignored while typing in an input/textarea/select or in a
+  // contenteditable element so the shortcuts never fight text entry.
+  function initShortcuts() {
+    const NAV_CHORD = { l: "/library", s: "/series", a: "/add", i: "/import" };
+    const CHORD_TIMEOUT_MS = 600;
+    const overlay = document.getElementById("kbd-help");
+    const openBtn = document.getElementById("kbd-help-btn");
+
+    let chordPending = false;
+    let chordTimer = null;
+
+    function isTyping(t) {
+      if (!t) return false;
+      if (t.isContentEditable) return true;
+      const tag = t.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    }
+
+    function overlayOpen() { return overlay && !overlay.hidden; }
+    function showOverlay() { if (overlay) overlay.hidden = false; }
+    function hideOverlay() { if (overlay) overlay.hidden = true; }
+    function toggleOverlay() { if (overlayOpen()) hideOverlay(); else showOverlay(); }
+
+    function cancelChord() {
+      chordPending = false;
+      if (chordTimer) { clearTimeout(chordTimer); chordTimer = null; }
+    }
+
+    function focusFilter() {
+      const sel = document.querySelector(
+        ".filter-bar input, #isbn-form input[name=isbn], #search-form input[name=q]",
+      );
+      if (!sel) return false;
+      sel.focus();
+      if (typeof sel.select === "function") sel.select();
+      return true;
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (overlayOpen()) { e.preventDefault(); hideOverlay(); return; }
+        if (isTyping(document.activeElement) && document.activeElement.blur) {
+          document.activeElement.blur();
+        }
+        cancelChord();
+        return;
+      }
+
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTyping(e.target)) return;
+
+      if (chordPending) {
+        const dest = NAV_CHORD[e.key.toLowerCase()];
+        cancelChord();
+        if (dest) {
+          e.preventDefault();
+          window.location.href = dest;
+        }
+        return;
+      }
+
+      if (e.key === "/") {
+        if (focusFilter()) e.preventDefault();
+        return;
+      }
+      if (e.key === "?") {
+        e.preventDefault();
+        toggleOverlay();
+        return;
+      }
+      if (e.key === "g") {
+        chordPending = true;
+        chordTimer = setTimeout(cancelChord, CHORD_TIMEOUT_MS);
+      }
+    });
+
+    if (overlay) {
+      overlay.querySelectorAll("[data-kbd-help-dismiss]").forEach((el) => {
+        el.addEventListener("click", hideOverlay);
+      });
+    }
+    if (openBtn) {
+      openBtn.addEventListener("click", toggleOverlay);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-rating-widget]").forEach(initRating);
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
@@ -613,6 +726,7 @@
     initImport();
     initAddPage();
     initCoverControls();
+    initShortcuts();
     registerServiceWorker();
   });
 })();

@@ -41,9 +41,11 @@
         {{end}}
 
         <h2>Rating</h2>
-        <div class="rating-widget" data-rating-widget data-filename="{{.Book.Filename}}">
+        <div class="rating-widget" data-rating-widget data-filename="{{.Book.Filename}}" role="group" aria-label="Star rating">
           {{range $i := .RatingRange}}
-            <button type="button" data-rating="{{$i}}" aria-pressed="{{if $.Book.Rating}}{{if le $i (deref $.Book.Rating)}}true{{else}}false{{end}}{{else}}false{{end}}">{{$i}}</button>
+            <button type="button" class="rating-star" data-rating="{{$i}}" aria-pressed="{{if $.Book.Rating}}{{if le $i (deref $.Book.Rating)}}true{{else}}false{{end}}{{else}}false{{end}}" aria-label="{{$i}} star{{pluralS $i}}">
+              <svg class="icon icon-star" aria-hidden="true" focusable="false"><use href="#icon-star-filled"/></svg>
+            </button>
           {{end}}
         </div>
 

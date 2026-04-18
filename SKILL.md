@@ -2,7 +2,7 @@
 
 **Authoritative spec for the Shelf project.** Load this file at the start of every Claude Code session. Every architectural decision, filename, schema, and rule in this document is binding. If a user request contradicts this document, raise the contradiction and ask before proceeding.
 
-Last updated: 2026-04-17 (Session 6 complete — v0.1 shipped; `providers.openlibrary.enabled` now honored at runtime)
+Last updated: 2026-04-18 (Session 8 complete — inline SVG icon sprite, star-rating widget, keyboard shortcuts)
 
 ---
 
@@ -420,7 +420,7 @@ Session 6 (polish) — **complete as of 2026-04-17**:
 
 Post-v0.1 design arc. Each session ships as a tagged patch release and is scoped to a single focused sitting (4–6 hours).
 
-Session 7 (design foundation) — **started 2026-04-17**:
+Session 7 (design foundation) — **complete as of 2026-04-17**:
 - CSS design tokens (spacing/radius/shadow/motion/color/type) in `internal/http/static/app.css`
 - Universal `:focus-visible` ring, hover/active transitions on every button/link/input
 - Button + form input polish, `data-busy` spinner glyph
@@ -430,12 +430,15 @@ Session 7 (design foundation) — **started 2026-04-17**:
 - Service worker `CACHE_VERSION` bump so returning clients get the new bundle
 - Fixes "buttons appear to do nothing" by making every async action emit a toast + disabling the button + showing the spinner glyph for the duration
 
-Session 8 (icons + interaction):
-- Inline SVG icon sprite via `embed.FS` (star-filled, star-outline, book, search, plus, refresh, chevron-right, check, x, keyboard, spinner)
-- Star-icon rating widget replacing numeric buttons, keyed by `currentColor` fill
-- Keyboard shortcuts: `/` → filter focus, `g l|s|a|i` → nav (600ms chord reset), `?` → help overlay, `Esc` → dismiss
-- Optimistic rating update (flip `aria-pressed` immediately, revert on error)
-- Convert remaining JS-set `.style.*` assignments in `app.js` to class toggles
+Session 8 (icons + interaction) — **complete as of 2026-04-18**:
+- `internal/http/templates/_sprite.html` defines an `iconSprite` partial holding a zero-sized `<svg>` with 11 `<symbol>` definitions — star-filled, star-outline, book, search, plus, refresh, chevron-right, check, x, keyboard, spinner. `_shared.html`'s `nav` partial emits it once per page so every page body carries the sprite with a single edit. Consumers call `<svg class="icon"><use href="#icon-..."/></svg>`; `fill: currentColor` drives color from each button's own color rule.
+- Star-icon rating widget in `book_detail.html`: five buttons of class `rating-star`, each with a `<use href="#icon-star-filled"/>` plus an accessible `aria-label="N star(s)"`. CSS maps `color: var(--border-strong)` (off) → `var(--star)` (hover or `aria-pressed="true"`), so one sprite symbol covers both visual states.
+- Keyboard shortcuts in `initShortcuts()` (`app.js`): `/` focuses the first filter/search input; `g l|s|a|i` within 600 ms navigates to `/library`/`/series`/`/add`/`/import`; `?` toggles the `#kbd-help` dialog; `Esc` closes the dialog or blurs the current input. Shortcuts are ignored when the event target is an `<input>`/`<textarea>`/`<select>` or any `contentEditable` element, and any modifier key (Ctrl/Meta/Alt) cancels the capture.
+- Help overlay (`helpOverlay` partial in `_shared.html`): `<div id="kbd-help" role="dialog" aria-modal="true">` with a muted backdrop and a panel listing every chord. Any element with `data-kbd-help-dismiss` (backdrop + close button) closes it. A keyboard-icon button (`#kbd-help-btn`) appears at the right edge of the top nav for mouse users.
+- Optimistic rating: `paint(next)` flips `aria-pressed` on every button synchronously, the PATCH fires, and `paint(prev)` reverts on failure. Toasts remain only on the API reply so success/error wording still matches reality.
+- Converted the three remaining JS `.style.*` assignments in `app.js` to class toggles: the per-conflict row uses `.diff-conflict-row` (padding + red-tinted background now in CSS), empty-section text uses `.muted`, and each conflict's radio label uses `.conflict-radio`. Zero `.style.*` assignments remain in `app.js`.
+- `sw.js` `CACHE_VERSION` bumped `shelf-v2 → shelf-v3` so returning clients pick up the new sprite + JS bundle on next activation.
+- Regression guards in `templates_test.go`: `TestNavEmitsIconSpriteAndHelpOverlay` asserts that `nav` renders the star/keyboard/x symbols plus the `#kbd-help` dialog shell on every page; `TestBookDetailRatingUsesStarIcons` asserts that rating buttons carry `class="rating-star"`, a `#icon-star-filled` `<use>`, and pluralized `aria-label`s. `TestNoInlineStyleAttributesInTemplates` continues to fail the build on any regression to `style=""`.
 
 Session 9 (empty states + a11y):
 - Empty-state designs with inline SVG illustrations for library, series, stats, and timeline sections

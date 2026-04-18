@@ -10,6 +10,7 @@
 {{end}}
 
 {{define "nav"}}
+{{template "iconSprite" .}}
 <header class="site"><nav>
   <a class="brand" href="/library">Shelf</a>
   <a href="/library" {{if eq .ActiveNav "library"}}class="active"{{end}}>Library</a>
@@ -17,7 +18,34 @@
   <a href="/stats"   {{if eq .ActiveNav "stats"}}class="active"{{end}}>Stats</a>
   <a href="/add"     {{if eq .ActiveNav "add"}}class="active"{{end}}>Add</a>
   <a href="/import"  {{if eq .ActiveNav "import"}}class="active"{{end}}>Import</a>
+  <button type="button" id="kbd-help-btn" class="secondary kbd-help-btn" aria-haspopup="dialog" aria-controls="kbd-help" aria-label="Keyboard shortcuts (press ?)" title="Keyboard shortcuts (?)">
+    <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-keyboard"/></svg>
+  </button>
 </nav></header>
+{{template "helpOverlay" .}}
+{{end}}
+
+{{define "helpOverlay"}}
+<div id="kbd-help" class="kbd-help" role="dialog" aria-modal="true" aria-labelledby="kbd-help-title" hidden>
+  <div class="kbd-help-backdrop" data-kbd-help-dismiss></div>
+  <div class="kbd-help-panel" role="document">
+    <div class="kbd-help-header">
+      <h2 id="kbd-help-title">Keyboard shortcuts</h2>
+      <button type="button" class="secondary kbd-help-close" data-kbd-help-dismiss aria-label="Close shortcuts">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-x"/></svg>
+      </button>
+    </div>
+    <dl class="kbd-help-list">
+      <dt><kbd>/</kbd></dt><dd>Focus the filter or search input on this page</dd>
+      <dt><kbd>g</kbd> <kbd>l</kbd></dt><dd>Go to Library</dd>
+      <dt><kbd>g</kbd> <kbd>s</kbd></dt><dd>Go to Series</dd>
+      <dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Go to Add</dd>
+      <dt><kbd>g</kbd> <kbd>i</kbd></dt><dd>Go to Import</dd>
+      <dt><kbd>?</kbd></dt><dd>Open / close this help</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close overlays, blur inputs</dd>
+    </dl>
+  </div>
+</div>
 {{end}}
 
 {{define "scripts"}}

@@ -438,7 +438,11 @@ textarea { resize: vertical; }
 .book-detail dt { color: var(--muted); }
 .book-detail dd { margin: 0; color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
 
-/* ===== Rating widget ===== */
+/* ===== Rating widget — star icon buttons =====
+   One filled-star SVG per button. Color is driven by currentColor so a
+   single CSS rule maps aria-pressed / hover to the visual state without
+   swapping icons: unrated = var(--border-strong) (outlined-looking fill),
+   hovered or pressed = var(--star). */
 .rating-widget {
   display: flex;
   gap: var(--space-1);
@@ -446,35 +450,39 @@ textarea { resize: vertical; }
   margin-top: var(--space-1);
 }
 
-.rating-widget button {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--muted);
+.rating-widget button.rating-star {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-3);
-  min-width: 2.25rem;
-  font-weight: 500;
+  padding: var(--space-1);
+  line-height: 0;
   transition:
-    background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-out);
 }
 
-.rating-widget button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--star) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--star) 30%, var(--border));
-  color: var(--star);
+.rating-widget button.rating-star .icon-star {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
-.rating-widget button:active:not(:disabled) {
+.rating-widget button.rating-star:hover:not(:disabled) {
+  color: var(--star);
+  background: color-mix(in srgb, var(--star) 10%, transparent);
+}
+
+.rating-widget button.rating-star:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.rating-widget button[aria-pressed="true"] {
-  background: var(--star);
-  color: #0a0a0a;
-  border-color: var(--star);
+.rating-widget button.rating-star[aria-pressed="true"] {
+  color: var(--star);
+}
+
+.rating-widget button.rating-star[data-busy="true"]::before {
+  display: none;
 }
 
 /* ===== Review form ===== */
@@ -849,4 +857,137 @@ textarea { resize: vertical; }
   margin-bottom: var(--space-4);
   display: flex;
   justify-content: flex-end;
+}
+
+/* ===== Icon sprite + <use> consumers =====
+   The sprite itself sits as a zero-sized <svg> at the top of <nav>; its
+   <symbol> children are referenced via <svg><use href="#icon-..."/></svg>
+   in buttons and links. Icons inherit color from `currentColor` so every
+   button's color rules light up its icon automatically. */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.icon {
+  width: 1em;
+  height: 1em;
+  display: inline-block;
+  vertical-align: -0.15em;
+  fill: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* Keyboard-shortcut help button in the top nav */
+.kbd-help-btn {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-2);
+  line-height: 0;
+}
+.kbd-help-btn .icon { width: 1.1rem; height: 1.1rem; }
+
+/* ===== Keyboard-shortcut help overlay ===== */
+.kbd-help[hidden] { display: none; }
+
+.kbd-help {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.kbd-help-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.kbd-help-panel {
+  position: relative;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  padding: var(--space-5);
+  min-width: min(28rem, 100%);
+  max-width: 32rem;
+}
+
+.kbd-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.kbd-help-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.kbd-help-close {
+  padding: var(--space-1) var(--space-2);
+  line-height: 0;
+}
+
+.kbd-help-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: 0.9rem;
+}
+.kbd-help-list dt {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  color: var(--fg-subtle);
+}
+.kbd-help-list dd {
+  margin: 0;
+  color: var(--fg-subtle);
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-elev);
+  color: var(--fg);
+  min-width: 1.5rem;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* ===== Import conflict rows (replaces JS .style.* assignments) ===== */
+.diff-conflict-row {
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, var(--border));
+  border-radius: var(--radius-md);
+}
+
+.diff-conflict-row strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.conflict-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-3);
+  color: var(--fg-subtle);
+  font-size: 0.88rem;
 }

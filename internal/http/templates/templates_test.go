@@ -15,7 +15,7 @@ func TestParse(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	for _, name := range []string{"library", "book_detail", "import", "error", "head", "nav", "scripts", "bookCard",
-		"add", "series_list", "series_detail", "stats"} {
+		"add", "series_list", "series_detail", "stats", "iconSprite", "helpOverlay"} {
 		if tmpl.Lookup(name) == nil {
 			t.Errorf("template %q not defined", name)
 		}
@@ -167,6 +167,78 @@ func TestStatsRenderUsesClassNotInlineStyle(t *testing.T) {
 	}
 	if !strings.Contains(out, `bar--w`) {
 		t.Errorf("stats bars must carry a bar--wN class; got:\n%s", out)
+	}
+}
+
+func TestNavEmitsIconSpriteAndHelpOverlay(t *testing.T) {
+	// Every page goes through {{template "nav" .}}, which in Session 8
+	// pulls in the inline SVG sprite + the keyboard-shortcut help overlay.
+	// If either drops out, in-page <use href="#icon-..."/> references go
+	// dead and the ? shortcut has nothing to show.
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	data := map[string]any{
+		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library",
+	}
+	if err := tmpl.ExecuteTemplate(&buf, "nav", data); err != nil {
+		t.Fatalf("execute nav: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="icon-star-filled"`,
+		`id="icon-keyboard"`,
+		`id="icon-x"`,
+		`id="kbd-help"`,
+		`id="kbd-help-btn"`,
+		`data-kbd-help-dismiss`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("nav output missing %q; full body:\n%s", want, out)
+		}
+	}
+}
+
+func TestBookDetailRatingUsesStarIcons(t *testing.T) {
+	// Session 8 replaced the numeric rating buttons with star SVG buttons.
+	// The <use href="#icon-star-filled"/> reference ties each button to the
+	// sprite symbol; if this test fails, either the sprite id changed or
+	// the template regressed.
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library",
+		"Warnings":    []string{},
+		"RatingRange": []int{1, 2, 3, 4, 5},
+		"Book": map[string]any{
+			"Filename": "Foo by Bar.md", "Title": "Foo",
+			"Authors": []string{"Bar"}, "Status": "reading",
+			"Rating":        (*int)(nil),
+			"Review":        "",
+			"TimelineLines": []string{},
+			"CanonicalName": true,
+			"Cover":         "", "ISBN": "",
+			"SeriesName":  "",
+			"SeriesIndex": (*float64)(nil),
+		},
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "book_detail", data); err != nil {
+		t.Fatalf("execute book_detail: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `class="rating-star"`) {
+		t.Errorf("rating buttons missing rating-star class")
+	}
+	if !strings.Contains(out, `href="#icon-star-filled"`) {
+		t.Errorf("rating buttons missing star SVG <use>; body:\n%s", out)
+	}
+	if !strings.Contains(out, `aria-label="1 star"`) || !strings.Contains(out, `aria-label="5 stars"`) {
+		t.Errorf("rating buttons missing pluralized aria-label; body:\n%s", out)
 	}
 }
 
