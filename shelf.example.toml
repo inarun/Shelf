@@ -1,0 +1,31 @@
+# Shelf config example. Copy this to `shelf.toml` (gitignored) and fill
+# in the paths for your setup. Put `shelf.toml` next to `shelf.exe` —
+# that's portable-mode default.
+#
+# For the full schema and defaults, see internal/config/config.go.
+
+[vault]
+# Absolute path to your Obsidian vault (or any folder hosting book notes).
+path = "C:\\Users\\YOU\\path\\to\\vault"
+
+# Vault-relative path to the folder holding book notes. Forward or
+# back slashes both work. Must exist under vault.path.
+books_folder = "Books"
+
+[server]
+# Localhost-only by default (SKILL.md §Core Invariant #4). Binding to
+# anything other than 127.0.0.1 / localhost triggers a startup warning.
+bind = "127.0.0.1"
+port = 7744
+
+# [data]
+# directory = "D:\\Shelf-data"
+#   Optional. Defaults to the directory containing shelf.exe (portable mode).
+#   Holds shelf.db, covers/, backups/, logs/ — none of which should be
+#   committed or synced.
+
+# [providers.openlibrary]
+# enabled       = true
+# cache_ttl_days = 30
+#   Both have working defaults; the add-book flow works regardless of the
+#   `enabled` flag in v0.1.
