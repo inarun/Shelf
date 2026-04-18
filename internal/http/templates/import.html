@@ -11,13 +11,13 @@
     <h1>Import from Goodreads</h1>
     <p>Upload your Goodreads CSV export. You'll see a preview before anything is written. Shelf snapshots the Books folder to <code>backups/</code> before any Apply.</p>
 
-    <form id="plan-form" enctype="multipart/form-data" style="display:flex;gap:0.5rem;align-items:center;">
+    <form id="plan-form" class="import-plan-form" enctype="multipart/form-data">
       <label>CSV: <input type="file" name="csv" accept=".csv,text/csv" required></label>
       <button type="submit" class="primary">Preview plan</button>
     </form>
 
     <section id="plan-output"></section>
-    <div style="margin-top:1rem;">
+    <div class="import-apply-row">
       <button id="apply-btn" type="button" class="primary" disabled>Apply import</button>
     </div>
     <section id="apply-report"></section>

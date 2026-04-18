@@ -25,6 +25,7 @@ func FuncMap() template.FuncMap {
 		"safeHref":        safeHref,
 		"safeSeriesHref":  safeSeriesHref,
 		"barWidth":        barWidth,
+		"barWidthClass":   barWidthClass,
 		"pluralS":         func(n int) string { if n == 1 { return "" }; return "s" },
 		"emptyOr":         func(s, fallback string) string { if s == "" { return fallback }; return s },
 		"deref":           derefInt,
@@ -123,6 +124,10 @@ func safeSeriesHref(name string) template.URL {
 // 100%. The returned template.CSS bypasses html/template auto-escaping
 // for style attribute values.
 //
+// Deprecated: retained for legacy callers only. New templates must use
+// barWidthClass — inline style="" attributes are blocked by the strict
+// style-src 'self' CSP (see §Anti-patterns in SKILL.md).
+//
 // #nosec G203 -- The output is an integer percentage composed in-package;
 // no caller-controlled text flows into it.
 func barWidth(value, max int64) template.CSS {
@@ -134,4 +139,24 @@ func barWidth(value, max int64) template.CSS {
 		pct = value * 100 / max
 	}
 	return template.CSS(fmt.Sprintf("%d%%", pct))
+}
+
+// barWidthClass returns a CSS utility class for bar-chart rows on the
+// stats page, discretized to 5% steps (bar--w0, bar--w5, …, bar--w100).
+// This replaces barWidth's inline style="" output, which the strict
+// style-src 'self' CSP blocks. max <= 0 yields "bar--w0"; values >= max
+// yield "bar--w100".
+func barWidthClass(value, max int64) string {
+	if max <= 0 || value <= 0 {
+		return "bar--w0"
+	}
+	// 0..20 steps of 5%. +half to round to nearest.
+	step := (value*20 + max/2) / max
+	if step > 20 {
+		step = 20
+	}
+	if step < 0 {
+		step = 0
+	}
+	return fmt.Sprintf("bar--w%d", step*5)
 }

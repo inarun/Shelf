@@ -49,13 +49,13 @@
               <td>
                 <div class="bar-row">
                   <span class="bar-count">{{.Books}}</span>
-                  <span class="bar" style="width: {{barWidth .Books $maxB}}"></span>
+                  <span class="bar {{barWidthClass .Books $maxB}}"></span>
                 </div>
               </td>
               <td>
                 <div class="bar-row">
                   <span class="bar-count">{{.Pages}}</span>
-                  <span class="bar bar-pages" style="width: {{barWidth .Pages $maxP}}"></span>
+                  <span class="bar bar-pages {{barWidthClass .Pages $maxP}}"></span>
                 </div>
               </td>
             </tr>

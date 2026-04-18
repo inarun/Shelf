@@ -20,7 +20,9 @@
 
 "use strict";
 
-const CACHE_VERSION = "shelf-v1";
+// Bump CACHE_VERSION on every static-asset change so returning clients
+// install the new bundle instead of serving the old cache-first copy.
+const CACHE_VERSION = "shelf-v2";
 const STATIC_PREFIX = "/static/";
 
 self.addEventListener("install", (event) => {

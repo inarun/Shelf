@@ -105,6 +105,71 @@ func TestHTMLEscapesUserContent(t *testing.T) {
 	}
 }
 
+func TestNoInlineStyleAttributesInTemplates(t *testing.T) {
+	// Strict CSP style-src 'self' (see internal/http/middleware/csp.go)
+	// rejects any element carrying a raw style="" attribute. Keep all
+	// styling in app.css + named classes; template helpers like
+	// barWidthClass emit class tokens, never style strings.
+	styleAttr := regexp.MustCompile(`(?is)<[^>]*\sstyle\s*=`)
+	err := fs.WalkDir(FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || path.Ext(p) != ".html" {
+			return nil
+		}
+		data, err := fs.ReadFile(FS(), p)
+		if err != nil {
+			return err
+		}
+		for _, match := range styleAttr.FindAllString(string(data), -1) {
+			t.Errorf("inline style attribute in %s — blocked by CSP style-src 'self': %s",
+				p, strings.TrimSpace(match))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStatsRenderUsesClassNotInlineStyle(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "stats",
+		"Summary": map[string]any{
+			"TotalBooks":    3,
+			"TotalReads":    5,
+			"RatedBooks":    2,
+			"AverageRating": 4.5,
+			"StatusCounts": map[string]int{
+				"unread": 1, "reading": 1, "finished": 1, "paused": 0, "dnf": 0,
+			},
+		},
+		"OrderedStatus": []string{"unread", "reading", "finished", "paused", "dnf"},
+		"Years": []map[string]any{
+			{"Year": 2024, "Books": int64(2), "Pages": int64(600)},
+			{"Year": 2025, "Books": int64(3), "Pages": int64(900)},
+		},
+		"MaxYearBooks": int64(3),
+		"MaxYearPages": int64(900),
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "stats", data); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `style=`) {
+		t.Errorf("stats template must not emit inline style= (CSP violation); got:\n%s", out)
+	}
+	if !strings.Contains(out, `bar--w`) {
+		t.Errorf("stats bars must carry a bar--wN class; got:\n%s", out)
+	}
+}
+
 func TestNoInlineScriptsInTemplates(t *testing.T) {
 	// Every <script> tag must have a src= attribute. CSP default-src 'self'
 	// disallows inline scripts; an external self-hosted reference is fine.

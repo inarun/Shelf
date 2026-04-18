@@ -41,11 +41,57 @@
     return fallback;
   }
 
+  // withBusy disables a button and marks data-busy="true" for the
+  // duration of an async op so the CSS spinner glyph renders. Guards
+  // against double-submit when the user click-spams.
+  function withBusy(btn, fn) {
+    if (!btn) return Promise.resolve(fn());
+    if (btn.dataset.busy === "true") return Promise.resolve();
+    btn.dataset.busy = "true";
+    btn.setAttribute("aria-busy", "true");
+    const prev = btn.disabled;
+    btn.disabled = true;
+    return Promise.resolve()
+      .then(fn)
+      .finally(() => {
+        delete btn.dataset.busy;
+        btn.removeAttribute("aria-busy");
+        btn.disabled = prev;
+      });
+  }
+
+  function toastRegion() {
+    let r = document.getElementById("toast-region");
+    if (r) return r;
+    r = document.createElement("div");
+    r.id = "toast-region";
+    r.setAttribute("aria-live", "polite");
+    r.setAttribute("role", "status");
+    document.body.appendChild(r);
+    return r;
+  }
+
+  // toast shows an ephemeral bottom-right notification. cls ∈
+  // {ok, warn, error}. Auto-dismisses after `ms`.
+  function toast(cls, text, opts) {
+    const ms = (opts && typeof opts.ms === "number") ? opts.ms : 3200;
+    const el = document.createElement("div");
+    el.className = "toast toast--" + cls;
+    el.textContent = text;
+    toastRegion().appendChild(el);
+    // Next frame: flip the --in class so the transition plays.
+    requestAnimationFrame(() => el.classList.add("toast--in"));
+    setTimeout(() => {
+      el.classList.remove("toast--in");
+      setTimeout(() => el.remove(), 240);
+    }, ms);
+  }
+
   function initRating(widget) {
     const filename = widget.getAttribute("data-filename");
     const buttons = widget.querySelectorAll("button[data-rating]");
     buttons.forEach((btn) => {
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", () => withBusy(btn, async () => {
         const val = parseInt(btn.getAttribute("data-rating"), 10);
         if (!Number.isFinite(val)) return;
         const next = btn.getAttribute("aria-pressed") === "true" ? null : val;
@@ -59,14 +105,13 @@
             const v = parseInt(b.getAttribute("data-rating"), 10);
             b.setAttribute("aria-pressed", next !== null && v <= next ? "true" : "false");
           });
+          toast("ok", next === null ? "Rating cleared" : "Rated " + next + (next === 1 ? " star" : " stars"));
         } else if (resp.status === 409) {
-          showBanner(widget.closest("main") || document.body, "warn",
-            errorText(resp.data, "This note changed outside Shelf. Reload and try again."));
+          toast("warn", errorText(resp.data, "This note changed outside Shelf. Reload and try again."));
         } else {
-          showBanner(widget.closest("main") || document.body, "error",
-            errorText(resp.data, "Could not save rating."));
+          toast("error", errorText(resp.data, "Could not save rating."));
         }
-      });
+      }));
     });
   }
 
@@ -75,38 +120,44 @@
     const select = el.querySelector("select");
     if (!select) return;
     select.addEventListener("change", async () => {
-      const resp = await api(
-        "PATCH",
-        "/api/books/" + encodeURIComponent(filename),
-        { status: select.value },
-      );
-      if (!resp.ok) {
-        showBanner(el.closest("main") || document.body,
-          resp.status === 409 ? "warn" : "error",
-          errorText(resp.data, "Could not save status."));
-      } else {
-        showBanner(el.closest("main") || document.body, "ok", "Status saved. Reload to see updated timeline.");
+      select.disabled = true;
+      try {
+        const resp = await api(
+          "PATCH",
+          "/api/books/" + encodeURIComponent(filename),
+          { status: select.value },
+        );
+        if (!resp.ok) {
+          toast(resp.status === 409 ? "warn" : "error",
+            errorText(resp.data, "Could not save status."));
+        } else {
+          toast("ok", "Status updated to " + select.value);
+        }
+      } finally {
+        select.disabled = false;
       }
     });
   }
 
   function initReview(form) {
     const filename = form.getAttribute("data-filename");
-    form.addEventListener("submit", async (e) => {
+    form.addEventListener("submit", (e) => {
       e.preventDefault();
-      const ta = form.querySelector("textarea[name=review]");
-      const resp = await api(
-        "PATCH",
-        "/api/books/" + encodeURIComponent(filename),
-        { review: ta ? ta.value : "" },
-      );
-      if (!resp.ok) {
-        showBanner(form.closest("main") || document.body,
-          resp.status === 409 ? "warn" : "error",
-          errorText(resp.data, "Could not save review."));
-      } else {
-        showBanner(form.closest("main") || document.body, "ok", "Review saved.");
-      }
+      const submitBtn = form.querySelector("button[type=submit]");
+      return withBusy(submitBtn, async () => {
+        const ta = form.querySelector("textarea[name=review]");
+        const resp = await api(
+          "PATCH",
+          "/api/books/" + encodeURIComponent(filename),
+          { review: ta ? ta.value : "" },
+        );
+        if (!resp.ok) {
+          toast(resp.status === 409 ? "warn" : "error",
+            errorText(resp.data, "Could not save review."));
+        } else {
+          toast("ok", "Review saved");
+        }
+      });
     });
   }
 
@@ -527,24 +578,20 @@
     const btn = host.querySelector("#refresh-cover-btn");
     if (!btn) return;
     const filename = host.getAttribute("data-filename") || "";
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
+    btn.addEventListener("click", () => withBusy(btn, async () => {
       const resp = await api(
         "POST",
         "/api/books/" + encodeURIComponent(filename) + "/cover",
         {},
       );
-      btn.disabled = false;
       if (!resp.ok) {
-        showBanner(host.closest("main") || document.body,
-          resp.status === 404 ? "warn" : "error",
+        toast(resp.status === 404 ? "warn" : "error",
           errorText(resp.data, "Could not refresh cover."));
         return;
       }
-      showBanner(host.closest("main") || document.body, "ok",
-        "Cover saved. Reloading…");
-      setTimeout(() => window.location.reload(), 500);
-    });
+      toast("ok", "Cover saved. Reloading…");
+      setTimeout(() => window.location.reload(), 600);
+    }));
   }
 
   function registerServiceWorker() {

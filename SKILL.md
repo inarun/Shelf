@@ -416,6 +416,40 @@ Session 5 (Windows integration):
 Session 6 (polish) — **complete as of 2026-04-17**:
 - Add-book flow with Open Library, cover caching, series view, stats page, procedural PWA/tray icons
 
+### v0.1.1 — Design polish (post-ship, 2026-04-17+)
+
+Post-v0.1 design arc. Each session ships as a tagged patch release and is scoped to a single focused sitting (4–6 hours).
+
+Session 7 (design foundation) — **started 2026-04-17**:
+- CSS design tokens (spacing/radius/shadow/motion/color/type) in `internal/http/static/app.css`
+- Universal `:focus-visible` ring, hover/active transitions on every button/link/input
+- Button + form input polish, `data-busy` spinner glyph
+- Toast notification system (bottom-right, `aria-live="polite"`) replacing most `showBanner` calls
+- CSP-compliant bar chart (`barWidthClass` template helper → `.bar--wN` utility classes) and import form layout (named classes, zero inline `style=""`)
+- Cool-minimal monochrome + single-accent palette (Linear/Raycast/Vercel-adjacent)
+- Service worker `CACHE_VERSION` bump so returning clients get the new bundle
+- Fixes "buttons appear to do nothing" by making every async action emit a toast + disabling the button + showing the spinner glyph for the duration
+
+Session 8 (icons + interaction):
+- Inline SVG icon sprite via `embed.FS` (star-filled, star-outline, book, search, plus, refresh, chevron-right, check, x, keyboard, spinner)
+- Star-icon rating widget replacing numeric buttons, keyed by `currentColor` fill
+- Keyboard shortcuts: `/` → filter focus, `g l|s|a|i` → nav (600ms chord reset), `?` → help overlay, `Esc` → dismiss
+- Optimistic rating update (flip `aria-pressed` immediately, revert on error)
+- Convert remaining JS-set `.style.*` assignments in `app.js` to class toggles
+
+Session 9 (empty states + a11y):
+- Empty-state designs with inline SVG illustrations for library, series, stats, and timeline sections
+- Bar-chart width-in animation (`requestAnimationFrame`-gated, respects `prefers-reduced-motion`)
+- Full `axe-core` a11y audit (run via in-page console snippet, no dependency install); fix all findings including fieldset+legend on rating, `<label>` density, skip-to-content link
+- Contrast verification tool at `cmd/a11y-check/main.go` (build tag `ignore`) — parses `--*` custom properties from app.css and reports WCAG 2.2 AA pass/fail for every (fg, bg) pair
+
+Session 10 (typography + motion system):
+- Display font-stack refinement; letter-spacing pass on all display headings; `font-feature-settings` for Segoe UI Variable stylistic alternates
+- Tabular numerics on every numeric cell site-wide
+- Coordinated motion language: per-card stagger on grid loads, `<main>` fade-in, tuned button `:active` scale
+- SVG logo + wordmark replacing the text brand link in `_shared.html`
+- Design system captured as a new §Design system section in SKILL.md between §Configuration and §Goodreads CSV import
+
 ### v0.2 — Audiobookshelf sync (future)
 
 Read-only sync of listening progress into Reading Timeline entries. Implements `providers/reading/audiobookshelf`. Data precedence per §Data Precedence.
@@ -462,6 +496,7 @@ Requires: Host header validation extended to allow Tailscale addresses; PWA layo
 - Any test that writes outside `t.TempDir()`
 - Any dependency added without justification
 - Any inline script, external CDN, or non-self-origin resource in the frontend
+- Any inline `style=""` attribute in a template — blocked at runtime by the strict `style-src 'self'` CSP. Use a named CSS class or a template helper that emits class tokens (see `barWidthClass` in `internal/http/templates/templates.go`). `TestNoInlineStyleAttributesInTemplates` enforces this.
 - Any `panic()` in production code paths (tests are fine); errors bubble up with context
 - "TODO: improve later" without a GitHub issue or at minimum a `FUTURE.md` entry
 - Silent error swallowing — every error is either handled meaningfully or returned with context
@@ -477,6 +512,7 @@ Requires: Host header validation extended to allow Tailscale addresses; PWA layo
 - **Single-instance semantics** (added 2026-04-17, Session 5): a second `shelf.exe` launch probes `127.0.0.1:<port>/healthz` for the Shelf signature (`HealthSignature` = `"shelf ok"`); if found, opens `/library` in the default browser and exits 0. Otherwise it starts as primary. No named-mutex lock; a genuine port collision with an unrelated service still produces a clear bind error on startup.
 - ~~**`providers.openlibrary.enabled` wiring:**~~ *Resolved 2026-04-17 (post-v0.1 polish).* The flag is honored in `cmd/shelf/main.go`: when false, `olClient` stays nil and the HTTP server receives a nil `metadata.Provider`. Handlers in `internal/http/handlers/add.go` already return 503 on a nil provider and the add-page template already renders a "provider not configured" banner via `ProviderWired`, so no handler-side changes were needed. Motivation is Core Invariant #8: a user who hasn't opted in has zero outbound HTTP surface area, not merely "no trigger yet." `shelf.example.toml` now has an uncommented `[providers.openlibrary]` section with `enabled = true` so copying the example produces a working add-book flow; a user who wants the no-phone-home posture comments the section out or sets `enabled = false`.
 - **Open Library contract** (added 2026-04-17, Session 6): Shelf hits exactly two hosts — `openlibrary.org` for metadata and `covers.openlibrary.org` for cover images. `LookupByISBN` uses `/api/books?bibkeys=ISBN:<n>&format=json&jscmd=data` (author names resolved inline, no follow-up OLID fetch). `Search` uses `/search.json?q=<q>&limit=10&fields=key,title,author_name,first_publish_year,isbn,cover_i`. Covers use `/b/{id|olid|isbn}/<value>-L.jpg?default=false` so "no cover" returns 404 instead of a placeholder. Every request enforces a 15s timeout, a 512 KiB JSON cap, a 2 MiB cover cap, a fixed User-Agent (`Shelf/0.1 (+https://github.com/inarun/Shelf)`), a same-host redirect cap of 3, and Content-Type validation (`application/json` for metadata; `image/jpeg`/`image/png` only for covers). ISBN values are normalized + digit-only-validated before URL interpolation; search queries are `url.QueryEscape`'d. No auth, no cookies, no telemetry.
+- ~~**Inline style attributes under strict CSP:**~~ *Resolved 2026-04-17 (Session 7).* Discovered post-v0.1 that `style-src 'self'` (without `'unsafe-inline'`) blocks any `<element style="…">` parsed from HTML. Symptoms: stats bars rendered at 0-width; import form lost its flex layout. Fix is class-based: data-derived numeric widths go through a `barWidthClass(value, max int64) string` template helper emitting 5%-step utility classes (`bar--w0` through `bar--w100`), and static layout goes through named component classes (`.import-plan-form`, `.import-apply-row`). JS-set `.style.*` assignments are *not* blocked by `style-src` per the CSP spec (programmatic property access is permitted), but Session 8 converts those to class toggles for consistency. Regression is prevented by `TestNoInlineStyleAttributesInTemplates` in `internal/http/templates/templates_test.go`.
 
 ---
 
