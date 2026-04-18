@@ -33,6 +33,7 @@ import (
 	"github.com/inarun/Shelf/internal/platform/autostart"
 	"github.com/inarun/Shelf/internal/platform/browser"
 	"github.com/inarun/Shelf/internal/platform/singleton"
+	"github.com/inarun/Shelf/internal/providers/metadata"
 	"github.com/inarun/Shelf/internal/providers/metadata/openlibrary"
 	"github.com/inarun/Shelf/internal/tray"
 	"github.com/inarun/Shelf/internal/vault/watcher"
@@ -121,9 +122,18 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 
 	sy := syncpkg.New(st, booksAbs)
 
-	// Open Library metadata provider. Every outbound request enforces
-	// its own timeout + size cap + host allowlist — see internal/providers/metadata/openlibrary.
-	olClient := openlibrary.New()
+	// Open Library metadata provider. Gated on providers.openlibrary.enabled
+	// so a user who hasn't opted in gets zero outbound HTTP capability — the
+	// add-book handlers already return 503 and the /add page shows a
+	// "provider not configured" banner when Metadata is nil. Every outbound
+	// request (when enabled) enforces its own timeout + size cap + host
+	// allowlist — see internal/providers/metadata/openlibrary.
+	var olClient metadata.Provider
+	if cfg.Providers.OpenLibrary.Enabled {
+		olClient = openlibrary.New()
+	} else {
+		logger.Info("openlibrary provider disabled via config; add-book flow unavailable")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

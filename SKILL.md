@@ -2,7 +2,7 @@
 
 **Authoritative spec for the Shelf project.** Load this file at the start of every Claude Code session. Every architectural decision, filename, schema, and rule in this document is binding. If a user request contradicts this document, raise the contradiction and ask before proceeding.
 
-Last updated: 2026-04-17 (Session 6 complete — v0.1 shipped)
+Last updated: 2026-04-17 (Session 6 complete — v0.1 shipped; `providers.openlibrary.enabled` now honored at runtime)
 
 ---
 
@@ -277,6 +277,8 @@ Obsidian and Shelf can both have the same file open. The rules:
 
 ## Configuration
 
+> **2026-04-17:** `providers.openlibrary.enabled` is now consulted at runtime — previously it was validated but the provider was wired unconditionally. A `false` value (the struct zero-value, i.e. the literal first-boot default if the TOML omits the section) means `cmd/shelf/main.go` passes a nil `metadata.Provider` to the HTTP server; the `/add` page renders a "provider not configured" banner and `/api/add/*` endpoints return 503. This gives Core Invariant #8 ("no external calls without user action") a stronger floor: a user who has not opted in cannot trigger outbound HTTP at all, even by clicking around. `shelf.example.toml` now enables the provider explicitly so users who copy the example get the working add-book flow.
+>
 > **2026-04-16:** Default config location and `data.directory` default changed. Shelf now runs in *portable mode* by default — config and data live next to the binary. Also: `books_folder` may be a nested vault-relative path, not just a flat subfolder name.
 
 Config file is TOML. Resolution order for locating it at startup:
@@ -302,7 +304,7 @@ bind = "127.0.0.1"              # localhost-only by default
 port = 7744
 
 [providers.openlibrary]
-enabled = true
+enabled = true                   # opt-in to outbound metadata/cover lookups; false ⇒ add-book disabled
 cache_ttl_days = 30
 
 # Future sections, all disabled by default:
@@ -473,6 +475,7 @@ Requires: Host header validation extended to allow Tailscale addresses; PWA layo
 - ~~**System tray library selection:**~~ *Resolved 2026-04-17 (Session 5).* Direct Win32 via `syscall.NewLazyDLL` + `golang.org/x/sys/windows` — no third-party tray dependency. Implementation in `internal/tray` behind `//go:build windows`, with `tray_other.go` returning `ErrNotSupported` on non-Windows so `cmd/shelf` runs headless in dev. Menu: Open Shelf / Start with Windows (checkable) / Quit. Icon is stock `IDI_APPLICATION` for v0.1; custom .ico deferred to Session 6.
 - ~~**PWA icon assets:**~~ *Resolved 2026-04-17 (Session 6).* Raster icons are generated procedurally from pure geometry (rounded-square accent-color background with three stacked "shelf + book spines" bands) by `cmd/gen-icons/main.go` — a one-shot utility tagged `//go:build ignore` so `go build ./...` skips it. It writes `internal/http/static/icon-192.png` + `icon-512.png` (embedded + listed in `manifest.webmanifest` as `purpose: any maskable`) and `internal/tray/icon.ico` (16/32/48 PNG-embedded entries). The tray loads the ICO bytes via `//go:embed`, calls `LookupIconIdFromDirectoryEx` + `CreateIconFromResourceEx` at the system `SM_CXSMICON` metric, and falls back to stock `IDI_APPLICATION` if the embed parse fails. Run `go run cmd/gen-icons/main.go` to regenerate.
 - **Single-instance semantics** (added 2026-04-17, Session 5): a second `shelf.exe` launch probes `127.0.0.1:<port>/healthz` for the Shelf signature (`HealthSignature` = `"shelf ok"`); if found, opens `/library` in the default browser and exits 0. Otherwise it starts as primary. No named-mutex lock; a genuine port collision with an unrelated service still produces a clear bind error on startup.
+- ~~**`providers.openlibrary.enabled` wiring:**~~ *Resolved 2026-04-17 (post-v0.1 polish).* The flag is honored in `cmd/shelf/main.go`: when false, `olClient` stays nil and the HTTP server receives a nil `metadata.Provider`. Handlers in `internal/http/handlers/add.go` already return 503 on a nil provider and the add-page template already renders a "provider not configured" banner via `ProviderWired`, so no handler-side changes were needed. Motivation is Core Invariant #8: a user who hasn't opted in has zero outbound HTTP surface area, not merely "no trigger yet." `shelf.example.toml` now has an uncommented `[providers.openlibrary]` section with `enabled = true` so copying the example produces a working add-book flow; a user who wants the no-phone-home posture comments the section out or sets `enabled = false`.
 - **Open Library contract** (added 2026-04-17, Session 6): Shelf hits exactly two hosts — `openlibrary.org` for metadata and `covers.openlibrary.org` for cover images. `LookupByISBN` uses `/api/books?bibkeys=ISBN:<n>&format=json&jscmd=data` (author names resolved inline, no follow-up OLID fetch). `Search` uses `/search.json?q=<q>&limit=10&fields=key,title,author_name,first_publish_year,isbn,cover_i`. Covers use `/b/{id|olid|isbn}/<value>-L.jpg?default=false` so "no cover" returns 404 instead of a placeholder. Every request enforces a 15s timeout, a 512 KiB JSON cap, a 2 MiB cover cap, a fixed User-Agent (`Shelf/0.1 (+https://github.com/inarun/Shelf)`), a same-host redirect cap of 3, and Content-Type validation (`application/json` for metadata; `image/jpeg`/`image/png` only for covers). ISBN values are normalized + digit-only-validated before URL interpolation; search queries are `url.QueryEscape`'d. No auth, no cookies, no telemetry.
 
 ---
