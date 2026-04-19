@@ -136,10 +136,10 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		logger.Info("openlibrary provider disabled via config; add-book flow unavailable")
 	}
 
-	// Audiobookshelf sync provider. Gated on providers.audiobookshelf.enabled
-	// with the same posture — nil client ⇒ future /api/sync/audiobookshelf/*
-	// endpoints return 503. Session 12 constructs the client; Session 13/14
-	// wire the mapper and UI.
+	// Audiobookshelf sync provider. Gated on providers.audiobookshelf.enabled —
+	// a nil client means /api/sync/audiobookshelf/* returns 503. Session 13
+	// wires the mapper/plan/apply pipeline behind those endpoints; Session 14
+	// adds the UI.
 	var abClient *audiobookshelf.Client
 	if cfg.Providers.Audiobookshelf.Enabled {
 		c, err := audiobookshelf.New(audiobookshelf.Credentials{
@@ -157,7 +157,6 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 	} else {
 		logger.Info("audiobookshelf provider disabled via config; sync unavailable")
 	}
-	_ = abClient // Session 12: client is constructed but no handler consumes it yet.
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -183,15 +182,16 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 	go drainWatcher(ctx, w, sy, logger)
 
 	srv, err := httpserver.New(httpserver.Dependencies{
-		Config:      cfg,
-		Store:       st,
-		Syncer:      sy,
-		Metadata:    olClient,
-		Covers:      coverCache,
-		BooksAbs:    booksAbs,
-		BackupsRoot: backupsRoot,
-		DataDir:     cfg.Data.Directory,
-		Logger:      logger,
+		Config:               cfg,
+		Store:                st,
+		Syncer:               sy,
+		Metadata:             olClient,
+		Covers:               coverCache,
+		AudiobookshelfClient: abClient,
+		BooksAbs:             booksAbs,
+		BackupsRoot:          backupsRoot,
+		DataDir:              cfg.Data.Directory,
+		Logger:               logger,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)

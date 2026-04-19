@@ -13,6 +13,7 @@ import (
 	"github.com/inarun/Shelf/internal/index/store"
 	"github.com/inarun/Shelf/internal/index/sync"
 	"github.com/inarun/Shelf/internal/providers/metadata"
+	"github.com/inarun/Shelf/internal/providers/reading/audiobookshelf"
 )
 
 // Dependencies bundles the collaborators every handler needs. Wired
@@ -24,14 +25,15 @@ import (
 // check for nil before dereferencing); in practice cmd/shelf always
 // wires them.
 type Dependencies struct {
-	Store       *store.Store
-	Syncer      *sync.Syncer
-	Metadata    metadata.Provider
-	Covers      *covers.Cache
-	BooksAbs    string
-	BackupsRoot string
-	DataDir     string
-	Templates   *template.Template
-	HMACKey     []byte
-	Logger      *slog.Logger
+	Store                *store.Store
+	Syncer               *sync.Syncer
+	Metadata             metadata.Provider
+	Covers               *covers.Cache
+	AudiobookshelfClient *audiobookshelf.Client
+	BooksAbs             string
+	BackupsRoot          string
+	DataDir              string
+	Templates            *template.Template
+	HMACKey              []byte
+	Logger               *slog.Logger
 }

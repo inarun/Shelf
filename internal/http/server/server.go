@@ -16,6 +16,7 @@ import (
 	"github.com/inarun/Shelf/internal/index/store"
 	"github.com/inarun/Shelf/internal/index/sync"
 	"github.com/inarun/Shelf/internal/providers/metadata"
+	"github.com/inarun/Shelf/internal/providers/reading/audiobookshelf"
 
 	"net/http"
 )
@@ -25,15 +26,16 @@ import (
 // can consult other fields without changing this struct's shape.
 // Metadata and Covers may be nil; handlers return 503 in that case.
 type Dependencies struct {
-	Config      *config.Config
-	Store       *store.Store
-	Syncer      *sync.Syncer
-	Metadata    metadata.Provider
-	Covers      *covers.Cache
-	BooksAbs    string
-	BackupsRoot string
-	DataDir     string
-	Logger      *slog.Logger
+	Config               *config.Config
+	Store                *store.Store
+	Syncer               *sync.Syncer
+	Metadata             metadata.Provider
+	Covers               *covers.Cache
+	AudiobookshelfClient *audiobookshelf.Client
+	BooksAbs             string
+	BackupsRoot          string
+	DataDir              string
+	Logger               *slog.Logger
 }
 
 // Server is the assembled stack. Immutable after New; all state lives
@@ -62,16 +64,17 @@ func New(deps Dependencies) (*Server, error) {
 	}
 
 	handlerDeps := &handlers.Dependencies{
-		Store:       deps.Store,
-		Syncer:      deps.Syncer,
-		Metadata:    deps.Metadata,
-		Covers:      deps.Covers,
-		BooksAbs:    deps.BooksAbs,
-		BackupsRoot: deps.BackupsRoot,
-		DataDir:     deps.DataDir,
-		Templates:   tmpl,
-		HMACKey:     keys.HMAC[:],
-		Logger:      deps.Logger,
+		Store:                deps.Store,
+		Syncer:               deps.Syncer,
+		Metadata:             deps.Metadata,
+		Covers:               deps.Covers,
+		AudiobookshelfClient: deps.AudiobookshelfClient,
+		BooksAbs:             deps.BooksAbs,
+		BackupsRoot:          deps.BackupsRoot,
+		DataDir:              deps.DataDir,
+		Templates:            tmpl,
+		HMACKey:              keys.HMAC[:],
+		Logger:               deps.Logger,
 	}
 
 	mux := http.NewServeMux()

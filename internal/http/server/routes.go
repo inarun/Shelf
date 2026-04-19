@@ -44,6 +44,8 @@ func registerRoutes(mux *http.ServeMux, h *handlers.Dependencies) {
 	mux.HandleFunc("POST /api/books/{filename}/cover", h.RefreshCover)
 	mux.HandleFunc("POST /api/import/plan", h.PlanImport)
 	mux.HandleFunc("POST /api/import/apply", h.ApplyImport)
+	mux.HandleFunc("POST /api/sync/audiobookshelf/plan", h.PlanSyncAudiobookshelf)
+	mux.HandleFunc("POST /api/sync/audiobookshelf/apply", h.ApplySyncAudiobookshelf)
 	mux.HandleFunc("POST /api/add/lookup", h.AddLookup)
 	mux.HandleFunc("POST /api/add/search", h.AddSearch)
 	mux.HandleFunc("POST /api/add/cover", h.AddCover)
