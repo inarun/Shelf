@@ -86,6 +86,7 @@
                   {{else}}
                     {{if .Started}}<span class="timeline-verb">Started</span> <time datetime="{{.Started}}">{{formatDate .Started}}</time>{{end}}{{if and .Started .Finished}}, {{end}}{{if .Finished}}<span class="timeline-verb">finished</span> <time datetime="{{.Finished}}">{{formatDate .Finished}}</time>{{end}}
                   {{end}}
+                  {{if eq .Source "audiobookshelf"}}<svg class="icon timeline-source-icon" aria-hidden="true" focusable="false"><use href="#icon-audio"/></svg><span class="sr-only"> Source: Audiobookshelf</span>{{end}}
                 </li>
               {{end}}
             </ol>

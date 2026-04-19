@@ -18,6 +18,7 @@ func registerRoutes(mux *http.ServeMux, h *handlers.Dependencies) {
 	mux.HandleFunc("GET /library", h.LibraryView)
 	mux.HandleFunc("GET /books/{filename}", h.BookDetail)
 	mux.HandleFunc("GET /import", h.ImportPage)
+	mux.HandleFunc("GET /sync", h.SyncPage)
 	mux.HandleFunc("GET /add", h.AddPage)
 	mux.HandleFunc("GET /series", h.SeriesList)
 	mux.HandleFunc("GET /series/{name}", h.SeriesDetail)

@@ -858,3 +858,158 @@ func TestCardCarriesDateChipForFinishedBook(t *testing.T) {
 		t.Errorf("unread card must NOT render a date-chip; got:\n%s", ubuf.String())
 	}
 }
+
+// TestSpriteHasIconAudioSymbol — Session 14 regression guard. The
+// book-detail timeline references #icon-audio for entries tagged
+// Source=="audiobookshelf"; the sprite must actually define it, at
+// 24×24 like every other nav-adjacent icon.
+func TestSpriteHasIconAudioSymbol(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "iconSprite", nil); err != nil {
+		t.Fatalf("execute iconSprite: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `id="icon-audio"`) {
+		t.Errorf("sprite missing icon-audio symbol; body:\n%s", out)
+	}
+	// icon-audio must share the 24×24 viewBox used by nav-adjacent icons
+	// so inline sizing (.icon, .timeline-source-icon) renders correctly.
+	// We assert on the full attribute substring to avoid matching the
+	// 64×64 empty-state icons.
+	if !strings.Contains(out, `id="icon-audio" viewBox="0 0 24 24"`) {
+		t.Errorf("icon-audio must share the 24x24 viewBox; body:\n%s", out)
+	}
+}
+
+// TestSyncPageRendersWhenConfigured asserts the /sync SSR page emits
+// the plan-form + plan-output + apply-btn + apply-report surface when
+// the Audiobookshelf provider is wired. This is the primary regression
+// guard for Session 14's UI scaffold — if any of the id="…" targets
+// gets renamed, initSync() in app.js will silently no-op.
+func TestSyncPageRendersWhenConfigured(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken":           "t",
+		"RequestID":           "r",
+		"ActiveNav":           "sync",
+		"AudiobookshelfWired": true,
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "sync", data); err != nil {
+		t.Fatalf("execute sync: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<form id="plan-form"`,
+		`class="sync-plan-form"`,
+		`id="plan-output"`,
+		`id="apply-btn"`,
+		`id="apply-report"`,
+		`class="sync-apply-row"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("sync page missing %q; body:\n%s", want, out)
+		}
+	}
+	// The empty-state copy must NOT render when wired.
+	if strings.Contains(out, "is not configured") {
+		t.Errorf("configured branch must not render the not-configured banner; body:\n%s", out)
+	}
+}
+
+// TestSyncPageEmptyStateWhenDisabled asserts the /sync SSR page renders
+// only the "not configured" banner when the Audiobookshelf provider is
+// nil. The plan-form + apply-btn markup must be absent so the page
+// makes the disabled state unambiguous and initSync() in app.js has
+// nothing to hook into.
+func TestSyncPageEmptyStateWhenDisabled(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken":           "t",
+		"RequestID":           "r",
+		"ActiveNav":           "sync",
+		"AudiobookshelfWired": false,
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "sync", data); err != nil {
+		t.Fatalf("execute sync: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "is not configured") {
+		t.Errorf("disabled branch must render the not-configured banner; body:\n%s", out)
+	}
+	for _, unwanted := range []string{
+		`<form id="plan-form"`,
+		`id="apply-btn"`,
+		`class="sync-plan-form"`,
+	} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("disabled branch must NOT render %q; body:\n%s", unwanted, out)
+		}
+	}
+}
+
+// TestTimelineShowsAudioBadgeOnABEntries — Session 14 regression guard.
+// Book-detail must emit #icon-audio + the sr-only "Source:
+// Audiobookshelf" label on timeline entries whose Source ==
+// "audiobookshelf", and must NOT emit it on vault-origin entries.
+func TestTimelineShowsAudioBadgeOnABEntries(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken":   "t",
+		"RequestID":   "r",
+		"ActiveNav":   "library",
+		"Warnings":    []string{},
+		"RatingRange": []int{1, 2, 3, 4, 5},
+		"Book": map[string]any{
+			"Filename":      "Project Hail Mary by Andy Weir.md",
+			"Title":         "Project Hail Mary",
+			"Authors":       []string{"Andy Weir"},
+			"Status":        "finished",
+			"Rating":        (*int)(nil),
+			"Review":        "",
+			"TimelineLines": []string{},
+			"CanonicalName": true,
+			"Cover":         "",
+			"ISBN":          "",
+			"SeriesName":    "",
+			"SeriesIndex":   (*float64)(nil),
+			"StartedDates":  []string{"2024-05-01", "2025-01-10"},
+			"FinishedDates": []string{"2024-06-03", "2025-02-14"},
+			"Timeline": []map[string]any{
+				{"Started": "2024-05-01", "Finished": "2024-06-03", "State": "finished", "Label": "Started 2024-05-01, finished 2024-06-03", "Source": ""},
+				{"Started": "2025-01-10", "Finished": "2025-02-14", "State": "finished", "Label": "Started 2025-01-10, finished 2025-02-14", "Source": "audiobookshelf"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "book_detail", data); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+	// Exactly one AB entry → exactly one #icon-audio reference and
+	// exactly one sr-only label. A count assertion (not just Contains)
+	// guards against the badge accidentally firing on vault entries.
+	if got := strings.Count(out, `href="#icon-audio"`); got != 1 {
+		t.Errorf("expected 1 #icon-audio reference, got %d; body:\n%s", got, out)
+	}
+	if got := strings.Count(out, "Source: Audiobookshelf"); got != 1 {
+		t.Errorf("expected 1 sr-only 'Source: Audiobookshelf' label, got %d; body:\n%s", got, out)
+	}
+	if !strings.Contains(out, `class="icon timeline-source-icon"`) {
+		t.Errorf("audio badge must carry timeline-source-icon class; body:\n%s", out)
+	}
+}

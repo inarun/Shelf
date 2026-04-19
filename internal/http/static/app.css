@@ -795,6 +795,18 @@ textarea { resize: vertical; }
   color: var(--fg);
 }
 
+/* Session 14: subtle provenance glyph on timeline entries that came
+   from an external source (currently only Audiobookshelf). Inherits
+   currentColor via --fg-subtle so it blends into the line rather than
+   competing with the date. */
+.timeline-source-icon {
+  width: 0.95em;
+  height: 0.95em;
+  margin-left: var(--space-2);
+  color: var(--fg-subtle);
+  vertical-align: -0.1em;
+}
+
 .timeline-notes-heading {
   margin-top: var(--space-3);
   font-size: 0.85rem;
@@ -1128,6 +1140,30 @@ textarea { resize: vertical; }
 }
 
 .import-apply-row {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-4);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ===== Sync page layout (mirrors .import-*) =====
+   Session 14: /sync page uses the same plan-preview → apply-report
+   cadence as /import, so the styles reuse the same box model. A
+   dedicated class is kept so future divergence (e.g. a config-status
+   banner above the form) can be added without touching /import. */
+.sync-plan-form {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.sync-apply-row {
   margin-top: var(--space-4);
   margin-bottom: var(--space-4);
   display: flex;

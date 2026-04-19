@@ -190,6 +190,10 @@
     const planOut = document.getElementById("plan-output");
     const reportOut = document.getElementById("apply-report");
     if (!planForm || !applyBtn || !planOut) return;
+    // The /sync page reuses the same element IDs for parallel plumbing.
+    // Distinguish by the form's class so each init wires only its own
+    // page's handlers (no double-fires, no cross-contamination).
+    if (!planForm.classList.contains("import-plan-form")) return;
 
     let currentCSV = null;
     let currentPlan = null;
@@ -343,6 +347,139 @@
     const p = document.createElement("p");
     p.textContent =
       (report.created || []).length + " created, " +
+      (report.updated || []).length + " updated, " +
+      (report.skipped || []).length + " skipped, " +
+      (report.errors || []).length + " errors.";
+    host.appendChild(p);
+
+    const backup = document.createElement("p");
+    backup.textContent = "Backup: " + (report.backup_root || "(none)");
+    host.appendChild(backup);
+
+    if ((report.errors || []).length > 0) {
+      const ul = document.createElement("ul");
+      report.errors.forEach((e) => {
+        const li = document.createElement("li");
+        li.textContent = e.filename + " (" + e.phase + "): " + e.error;
+        ul.appendChild(li);
+      });
+      host.appendChild(ul);
+    }
+  }
+
+  // initSync wires the /sync page. Mirrors initImport but (a) the plan
+  // request has no CSV (the server fetches Audiobookshelf state itself),
+  // (b) the plan shape carries will_update/conflicts/will_skip/unmatched
+  // (no will_create — sync never creates notes in v0.2), (c) the apply
+  // body is application/x-www-form-urlencoded instead of multipart.
+  //
+  // Parallel to initImport rather than refactored-shared: the diverging
+  // plan shape (unmatched vs. will_create) and transport (urlencoded vs.
+  // multipart) make a spec-list refactor more complex than two tight
+  // functions. makeSection, makeRadio, collectDecisions remain shared.
+  function initSync() {
+    const planForm = document.getElementById("plan-form");
+    const applyBtn = document.getElementById("apply-btn");
+    const planOut = document.getElementById("plan-output");
+    const reportOut = document.getElementById("apply-report");
+    // When the page is in the disabled-state branch, these are absent;
+    // early-return cleanly so we don't fight the import-page handler
+    // that looks for the same IDs.
+    if (!planForm || !applyBtn || !planOut) return;
+    if (!planForm.classList.contains("sync-plan-form")) return;
+
+    let currentPlan = null;
+
+    planForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await withBusy(planForm.querySelector('button[type="submit"]'), async () => {
+        const resp = await api("POST", "/api/sync/audiobookshelf/plan", null, { form: true });
+        if (!resp.ok) {
+          showBanner(planOut, "error", errorText(resp.data, "Plan request failed."));
+          applyBtn.disabled = true;
+          currentPlan = null;
+          return;
+        }
+        currentPlan = resp.data;
+        renderSyncPlan(planOut, currentPlan);
+        applyBtn.disabled = false;
+        toast("ok", "Plan generated");
+      });
+    });
+
+    applyBtn.addEventListener("click", async () => {
+      if (!currentPlan) return;
+      await withBusy(applyBtn, async () => {
+        const fd = new FormData();
+        fd.set("decisions", JSON.stringify(collectDecisions(planOut)));
+        const resp = await api("POST", "/api/sync/audiobookshelf/apply", fd, { form: true });
+        if (!resp.ok) {
+          showBanner(reportOut || planOut, "error", errorText(resp.data, "Apply request failed."));
+          return;
+        }
+        renderSyncReport(reportOut || planOut, resp.data);
+        toast("ok", "Sync applied");
+      });
+    });
+  }
+
+  function renderSyncPlan(host, plan) {
+    host.textContent = "";
+    const header = document.createElement("h2");
+    header.textContent = "Plan preview";
+    host.appendChild(header);
+
+    const summary = document.createElement("p");
+    summary.textContent =
+      (plan.will_update || []).length + " update, " +
+      (plan.conflicts || []).length + " conflict, " +
+      (plan.will_skip || []).length + " skip, " +
+      (plan.unmatched || []).length + " unmatched";
+    host.appendChild(summary);
+
+    host.appendChild(makeSection("Will update", plan.will_update || [], "diff-update",
+      (e) => [e.filename, e.reason]));
+    host.appendChild(makeSection("Will skip", plan.will_skip || [], "diff-skip",
+      (e) => [e.filename, e.reason]));
+    host.appendChild(makeSection("Unmatched Audiobookshelf items", plan.unmatched || [], "diff-skip",
+      (e) => [e.display_title + (e.display_author ? " — " + e.display_author : ""), e.reason]));
+
+    const conflictsSection = document.createElement("section");
+    const h = document.createElement("h3");
+    h.textContent = "Conflicts (" + (plan.conflicts || []).length + ")";
+    conflictsSection.appendChild(h);
+    (plan.conflicts || []).forEach((c, idx) => {
+      const row = document.createElement("div");
+      row.className = "diff-conflict-row";
+      row.setAttribute("data-conflict-row", String(idx));
+      row.setAttribute("data-filename", c.filename);
+
+      const fn = document.createElement("strong");
+      fn.textContent = c.filename;
+      row.appendChild(fn);
+      const reason = document.createElement("p");
+      reason.textContent = c.reason;
+      row.appendChild(reason);
+
+      const accept = makeRadio("sync_conflict_" + idx, "accept", "Accept", false);
+      const skip = makeRadio("sync_conflict_" + idx, "skip", "Skip", true);
+      row.appendChild(accept);
+      row.appendChild(skip);
+      conflictsSection.appendChild(row);
+    });
+    host.appendChild(conflictsSection);
+  }
+
+  function renderSyncReport(host, report) {
+    host.textContent = "";
+    const h = document.createElement("h2");
+    h.textContent = "Apply report";
+    host.appendChild(h);
+
+    // Audiobookshelf sync never creates notes in v0.2 (unmatched items
+    // are reported, not auto-created), so the summary omits "created".
+    const p = document.createElement("p");
+    p.textContent =
       (report.updated || []).length + " updated, " +
       (report.skipped || []).length + " skipped, " +
       (report.errors || []).length + " errors.";
@@ -830,6 +967,7 @@
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
     document.querySelectorAll("[data-review-form]").forEach(initReview);
     initImport();
+    initSync();
     initAddPage();
     initCoverControls();
     initLibrarySearch();

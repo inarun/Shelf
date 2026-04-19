@@ -101,6 +101,12 @@ type TimelineEntry struct {
 	// Label is the pre-composed screen-reader text summarizing the
 	// entry; the template uses it as the <li>'s aria-label.
 	Label string
+	// Source tags an entry with a provenance string for badge rendering
+	// on the book-detail timeline. "" = vault-origin (no badge);
+	// "audiobookshelf" = a Session-13 sync that stamped
+	// "## Reading Timeline" body lines with "(Audiobookshelf)".
+	// Extend as new reading-source providers land (Kavita, etc.).
+	Source string
 }
 
 // BookDetail renders /books/{filename}.
@@ -155,8 +161,70 @@ func (d *Dependencies) buildBookDetailView(ctx context.Context, row *store.BookR
 		BookRow:       *row,
 		Review:        n.Body.Notes(),
 		TimelineLines: extractTimelineLines(n.Body),
-		Timeline:      composeTimeline(row.StartedDates, row.FinishedDates, row.Status),
+		Timeline:      markAudioSources(composeTimeline(row.StartedDates, row.FinishedDates, row.Status), timelineEvents(n.Body)),
 	}, nil
+}
+
+// timelineEvents returns the parsed Reading Timeline events from a body,
+// or nil if the body has no timeline block. Separate from
+// extractTimelineLines so the audio-badge detector can consume the
+// structured dates rather than raw strings.
+func timelineEvents(b *body.Body) []body.TimelineEvent {
+	for _, bl := range b.Blocks {
+		if bl.Kind != body.KindTimeline {
+			continue
+		}
+		tp, ok := bl.Parsed.(*body.TimelineParsed)
+		if !ok || tp == nil {
+			return nil
+		}
+		return tp.Events
+	}
+	return nil
+}
+
+// markAudioSources stamps TimelineEntry.Source = "audiobookshelf" on
+// any entry whose Started or Finished ISO-date matches a body
+// TimelineEvent whose Text contains "(Audiobookshelf)" — the marker
+// Session 13's body.AppendTimelineEvent writes during sync apply.
+//
+// Pure: no IO, no time.Now, no Dependencies. Safe to unit-test directly.
+// Called from buildBookDetailView after composeTimeline produces the
+// vault-origin skeleton.
+//
+// Rationale: frontmatter started[]/finished[] arrays don't carry source
+// provenance (per §Frontmatter schema — no `source`-per-date field).
+// The body "## Reading Timeline" lines do, so we cross-reference by
+// date. One match per date is enough; duplicate-date AB entries will
+// each set Source to the same value.
+func markAudioSources(entries []TimelineEntry, events []body.TimelineEvent) []TimelineEntry {
+	if len(entries) == 0 || len(events) == 0 {
+		return entries
+	}
+	// Collect ISO-date strings whose event text is an AB marker.
+	abDates := make(map[string]struct{}, len(events))
+	for _, ev := range events {
+		if ev.Date.IsZero() {
+			continue
+		}
+		if !strings.Contains(ev.Text, "(Audiobookshelf)") {
+			continue
+		}
+		abDates[ev.Date.Format("2006-01-02")] = struct{}{}
+	}
+	if len(abDates) == 0 {
+		return entries
+	}
+	for i := range entries {
+		if _, ok := abDates[entries[i].Finished]; ok && entries[i].Finished != "" {
+			entries[i].Source = "audiobookshelf"
+			continue
+		}
+		if _, ok := abDates[entries[i].Started]; ok && entries[i].Started != "" {
+			entries[i].Source = "audiobookshelf"
+		}
+	}
+	return entries
 }
 
 // composeTimeline pairs started[i] with finished[i] into TimelineEntry
@@ -255,6 +323,27 @@ type ImportPageData struct {
 func (d *Dependencies) ImportPage(w http.ResponseWriter, r *http.Request) {
 	d.renderHTML(w, r, "import", ImportPageData{
 		PageCommon: d.newPageCommon(r, "import"),
+	})
+}
+
+// SyncPageData is the template data for sync.html. AudiobookshelfWired
+// mirrors /add's ProviderWired flag — when false, the template renders
+// a "not configured" banner instead of the plan/apply form. This keeps
+// the page discoverable (the nav link is always visible) while making
+// the disabled state unambiguous.
+type SyncPageData struct {
+	PageCommon
+	AudiobookshelfWired bool
+}
+
+// SyncPage renders /sync. AudiobookshelfWired reflects whether a
+// configured AB client was constructed at startup; a nil client means
+// /api/sync/audiobookshelf/* returns 503 and there's nothing the page
+// can usefully ask the user to do.
+func (d *Dependencies) SyncPage(w http.ResponseWriter, r *http.Request) {
+	d.renderHTML(w, r, "sync", SyncPageData{
+		PageCommon:          d.newPageCommon(r, "sync"),
+		AudiobookshelfWired: d.AudiobookshelfClient != nil,
 	})
 }
 

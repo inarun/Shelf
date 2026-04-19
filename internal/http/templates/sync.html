@@ -1,0 +1,33 @@
+{{define "sync"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>Sync — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main id="main">
+    <h1>Sync from Audiobookshelf</h1>
+    {{if not .AudiobookshelfWired}}
+      <div class="banner warn">
+        <p>Audiobookshelf sync is not configured. Set <code>[providers.audiobookshelf]</code> with <code>enabled = true</code>, a <code>base_url</code>, and an <code>api_key</code> in <code>shelf.toml</code>, then restart Shelf.</p>
+      </div>
+    {{else}}
+      <p>Pull listening progress from Audiobookshelf. You'll see a preview before anything is written. Shelf snapshots the Books folder to <code>backups/</code> before any Apply.</p>
+
+      <form id="plan-form" class="sync-plan-form">
+        <button type="submit" class="primary">Preview plan</button>
+      </form>
+
+      <section id="plan-output" aria-live="polite"></section>
+      <div class="sync-apply-row">
+        <button id="apply-btn" type="button" class="primary" disabled>Apply sync</button>
+      </div>
+      <section id="apply-report" aria-live="polite"></section>
+    {{end}}
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

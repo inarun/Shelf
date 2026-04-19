@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/inarun/Shelf/internal/http/templates"
 	"github.com/inarun/Shelf/internal/index/store"
 	sync_ "github.com/inarun/Shelf/internal/index/sync"
+	"github.com/inarun/Shelf/internal/vault/body"
 )
 
 const hyperionFixture = `---
@@ -280,6 +282,110 @@ func TestComposeTimeline(t *testing.T) {
 		}
 		if got[1].State != "finished" {
 			t.Errorf("terminal pair state = %q", got[1].State)
+		}
+	})
+}
+
+// TestMarkAudioSources_MatchesByDate exercises the audio-badge detection
+// helper that tags TimelineEntry rows whose date matches a body-timeline
+// event containing "(Audiobookshelf)". This is the logic
+// `TestTimelineShowsAudioBadgeOnABEntries` (template side) can't cover
+// end-to-end — that test feeds an already-tagged slice; this one
+// verifies the tagger itself.
+func TestMarkAudioSources_MatchesByDate(t *testing.T) {
+	mkDate := func(s string) time.Time {
+		d, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			t.Fatalf("bad date %q: %v", s, err)
+		}
+		return d
+	}
+
+	t.Run("finished-line match tags finished entry", func(t *testing.T) {
+		entries := []TimelineEntry{
+			{Started: "2025-01-10", Finished: "2025-02-14", State: "finished"},
+		}
+		events := []body.TimelineEvent{
+			{Date: mkDate("2025-02-14"), Text: "Finished listening (Audiobookshelf)"},
+		}
+		got := markAudioSources(entries, events)
+		if got[0].Source != "audiobookshelf" {
+			t.Errorf("Source = %q, want audiobookshelf", got[0].Source)
+		}
+	})
+
+	t.Run("started-line match tags in-progress entry", func(t *testing.T) {
+		entries := []TimelineEntry{
+			{Started: "2025-03-01", Finished: "", State: "reading"},
+		}
+		events := []body.TimelineEvent{
+			{Date: mkDate("2025-03-01"), Text: "Started listening (Audiobookshelf)"},
+		}
+		got := markAudioSources(entries, events)
+		if got[0].Source != "audiobookshelf" {
+			t.Errorf("Source = %q, want audiobookshelf", got[0].Source)
+		}
+	})
+
+	t.Run("no match leaves Source empty", func(t *testing.T) {
+		entries := []TimelineEntry{
+			{Started: "2025-01-10", Finished: "2025-02-14", State: "finished"},
+		}
+		events := []body.TimelineEvent{
+			// Different date, so no match — even though the text has the marker.
+			{Date: mkDate("2099-01-01"), Text: "Finished listening (Audiobookshelf)"},
+			// Same date but no marker — vault-authored line.
+			{Date: mkDate("2025-02-14"), Text: "Finished (Kindle)"},
+		}
+		got := markAudioSources(entries, events)
+		if got[0].Source != "" {
+			t.Errorf("Source = %q, want empty", got[0].Source)
+		}
+	})
+
+	t.Run("no body events leaves all entries vault-origin", func(t *testing.T) {
+		entries := []TimelineEntry{
+			{Started: "2025-01-10", Finished: "2025-02-14", State: "finished"},
+			{Started: "2025-03-01", Finished: "", State: "reading"},
+		}
+		got := markAudioSources(entries, nil)
+		for i, e := range got {
+			if e.Source != "" {
+				t.Errorf("entry %d Source = %q, want empty", i, e.Source)
+			}
+		}
+	})
+
+	t.Run("zero-date event is ignored", func(t *testing.T) {
+		// Malformed body lines parse to TimelineEvent{Date: time.Time{}, Raw: ...}
+		// — the helper must skip them, not match every entry.
+		entries := []TimelineEntry{
+			{Started: "2025-01-10", Finished: "2025-02-14", State: "finished"},
+		}
+		events := []body.TimelineEvent{
+			{Text: "Finished listening (Audiobookshelf)"}, // zero Date
+		}
+		got := markAudioSources(entries, events)
+		if got[0].Source != "" {
+			t.Errorf("Source = %q, want empty (zero-date event)", got[0].Source)
+		}
+	})
+
+	t.Run("mixed entries tag only the AB one", func(t *testing.T) {
+		entries := []TimelineEntry{
+			{Started: "2024-05-01", Finished: "2024-06-03", State: "finished"}, // vault
+			{Started: "2025-01-10", Finished: "2025-02-14", State: "finished"}, // AB
+		}
+		events := []body.TimelineEvent{
+			{Date: mkDate("2024-06-03"), Text: "Finished (Kindle)"},
+			{Date: mkDate("2025-02-14"), Text: "Finished listening (Audiobookshelf)"},
+		}
+		got := markAudioSources(entries, events)
+		if got[0].Source != "" {
+			t.Errorf("vault entry Source = %q, want empty", got[0].Source)
+		}
+		if got[1].Source != "audiobookshelf" {
+			t.Errorf("AB entry Source = %q, want audiobookshelf", got[1].Source)
 		}
 	})
 }
