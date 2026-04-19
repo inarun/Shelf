@@ -27,19 +27,20 @@ func TestLibraryRendersBooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rating := 4
+	rating := 4.0
 	type bookRow struct {
 		Filename, Title, Subtitle string
 		Authors                   []string
 		Status, SeriesName        string
 		SeriesIndex               any
-		Rating                    *int
+		RatingOverall             *float64
 		Cover                     string
 		StartedDates              []string
 		FinishedDates             []string
 	}
 	data := struct {
 		CSRFToken, RequestID, ActiveNav string
+		PendingMigrations               int64
 		Books                           []bookRow
 		Filter                          struct{ Status, Query string }
 	}{
@@ -47,7 +48,7 @@ func TestLibraryRendersBooks(t *testing.T) {
 	}
 	data.Books = append(data.Books, bookRow{
 		Filename: "Hyperion by Dan Simmons.md", Title: "Hyperion",
-		Authors: []string{"Dan Simmons"}, Status: "reading", Rating: &rating,
+		Authors: []string{"Dan Simmons"}, Status: "reading", RatingOverall: &rating,
 		Cover:        "/covers/" + strings.Repeat("a", 64) + ".jpg",
 		StartedDates: []string{"2025-06-01"},
 	})
@@ -790,7 +791,7 @@ func TestBookCardHasDataSearchAttr(t *testing.T) {
 	row := struct {
 		Filename, Title, Subtitle, SeriesName, Status string
 		Authors                                       []string
-		Rating                                        *int
+		RatingOverall                                 *float64
 		SeriesIndex                                   any
 		Cover                                         string
 		StartedDates, FinishedDates                   []string
@@ -888,7 +889,7 @@ func TestCardCarriesDateChipForFinishedBook(t *testing.T) {
 	type card struct {
 		Filename, Title, Subtitle, SeriesName, Status string
 		Authors                                       []string
-		Rating                                        *int
+		RatingOverall                                 *float64
 		SeriesIndex                                   any
 		Cover                                         string
 		StartedDates, FinishedDates                   []string
@@ -1075,3 +1076,158 @@ func TestTimelineShowsAudioBadgeOnABEntries(t *testing.T) {
 		t.Errorf("audio badge must carry timeline-source-icon class; body:\n%s", out)
 	}
 }
+
+// TestMigratePageRendersFormShell asserts the /migrate SSR page emits
+// the plan-form + migrate-plan-form class + plan-output + apply-btn +
+// apply-report surface so initMigrate() in app.js has everything to
+// hook. The form's class distinguishes this page from /sync (which
+// uses .sync-plan-form) — both share the same plan-form id.
+func TestMigratePageRendersFormShell(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken": "t",
+		"RequestID": "r",
+		"ActiveNav": "migrate",
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "migrate", data); err != nil {
+		t.Fatalf("execute migrate: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<form id="plan-form"`,
+		`class="migrate-plan-form"`,
+		`id="plan-output"`,
+		`id="apply-btn"`,
+		`id="apply-report"`,
+		"Migrate ratings",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("migrate page missing %q; body:\n%s", want, out)
+		}
+	}
+}
+
+// TestNavShowsMigrateBadgeWhenPending asserts the nav surfaces a
+// count pill on the Migrate link when PendingMigrations > 0 and omits
+// it when zero. This is the discoverability path for the one-time
+// v0.2.1 rating migration.
+func TestNavShowsMigrateBadgeWhenPending(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderNav := func(pending int64) string {
+		data := map[string]any{
+			"CSRFToken":         "t",
+			"RequestID":         "r",
+			"ActiveNav":         "library",
+			"PendingMigrations": pending,
+		}
+		var buf bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&buf, "nav", data); err != nil {
+			t.Fatalf("execute nav: %v", err)
+		}
+		return buf.String()
+	}
+	withBadge := renderNav(3)
+	if !strings.Contains(withBadge, `class="nav-badge"`) {
+		t.Errorf("pending=3 should render nav-badge; body:\n%s", withBadge)
+	}
+	if !strings.Contains(withBadge, ">3</span>") {
+		t.Errorf("pending=3 should render the count in the badge; body:\n%s", withBadge)
+	}
+	noBadge := renderNav(0)
+	if strings.Contains(noBadge, `class="nav-badge"`) {
+		t.Errorf("pending=0 must not render nav-badge; body:\n%s", noBadge)
+	}
+}
+
+// TestStarsRendersSpriteMarkupNotUnicode guards that cards emit SVG
+// sprite markup instead of the legacy Unicode ★/☆ text so the new
+// fractional/bumped rendering (v0.2.1 S16) stays consistent across
+// library, series, and any future card-bearing pages.
+func TestStarsRendersSpriteMarkupNotUnicode(t *testing.T) {
+	got := string(stars(4.0))
+	if !strings.Contains(got, `href="#icon-star-filled"`) {
+		t.Errorf("stars(4.0) missing icon-star-filled; got %s", got)
+	}
+	if strings.ContainsAny(got, "★☆") {
+		t.Errorf("stars(4.0) still emits Unicode stars; got %s", got)
+	}
+}
+
+// TestStarsHalfStarAtPointFive asserts 4.5 → 4 filled + 1 half + 0 empty.
+func TestStarsHalfStarAtPointFive(t *testing.T) {
+	got := string(stars(4.5))
+	full := strings.Count(got, "#icon-star-filled")
+	half := strings.Count(got, "#icon-star-half")
+	empty := strings.Count(got, "#icon-star-outline")
+	if full != 4 || half != 1 || empty != 0 {
+		t.Errorf("stars(4.5) full=%d half=%d empty=%d, want 4/1/0; body:\n%s", full, half, empty, got)
+	}
+}
+
+// TestStarsCapsAtFiveWithBumpedBadge asserts that a bumped value of 6
+// still renders exactly 5 filled stars (the bump goes to the badge).
+func TestStarsCapsAtFiveWithBumpedBadge(t *testing.T) {
+	stars6 := string(stars(6.0))
+	full := strings.Count(stars6, "#icon-star-filled")
+	half := strings.Count(stars6, "#icon-star-half")
+	empty := strings.Count(stars6, "#icon-star-outline")
+	if full != 5 || half != 0 || empty != 0 {
+		t.Errorf("stars(6.0) full=%d half=%d empty=%d, want 5/0/0; body:\n%s", full, half, empty, stars6)
+	}
+	badge := string(bumpedBadge(6.0))
+	if !strings.Contains(badge, "6/5") {
+		t.Errorf("bumpedBadge(6.0) missing '6/5' text; got %s", badge)
+	}
+	if !strings.Contains(badge, `class="bumped-badge"`) {
+		t.Errorf("bumpedBadge(6.0) missing .bumped-badge class; got %s", badge)
+	}
+}
+
+// TestBumpedBadgeHiddenAtFiveOrBelow asserts no badge renders when the
+// rating is at or below the 5-star cap.
+func TestBumpedBadgeHiddenAtFiveOrBelow(t *testing.T) {
+	for _, v := range []any{0.0, 3.5, 5.0} {
+		if got := string(bumpedBadge(v)); got != "" {
+			t.Errorf("bumpedBadge(%v) = %q, want empty", v, got)
+		}
+	}
+}
+
+// TestStarsEmptyForZeroOrMissing renders a placeholder dash when the
+// value is missing or zero so cards stay visually balanced.
+func TestStarsEmptyForZeroOrMissing(t *testing.T) {
+	cases := []any{nil, (*float64)(nil), (*int64)(nil), 0.0}
+	for _, v := range cases {
+		got := string(stars(v))
+		if !strings.Contains(got, "rating-empty") {
+			t.Errorf("stars(%v) missing rating-empty; got %s", v, got)
+		}
+	}
+}
+
+// TestFormatRatingTrimsZeros asserts integers emit without a decimal
+// and halves keep a single decimal place.
+func TestFormatRatingTrimsZeros(t *testing.T) {
+	cases := map[any]string{
+		4.0: "4",
+		4.5: "4.5",
+		6.0: "6",
+		0.0: "0",
+	}
+	for in, want := range cases {
+		if got := formatRating(in); got != want {
+			t.Errorf("formatRating(%v) = %q, want %q", in, got, want)
+		}
+	}
+	if got := formatRating(nil); got != "" {
+		t.Errorf("formatRating(nil) = %q, want empty", got)
+	}
+}
+

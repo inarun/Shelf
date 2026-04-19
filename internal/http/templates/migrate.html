@@ -1,0 +1,27 @@
+{{define "migrate"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>Migrate ratings — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main id="main">
+    <h1>Migrate ratings</h1>
+    <p>Rewrites legacy <code>rating: N</code> frontmatter entries into the canonical <code>rating: {overall: N, trial_system: {}}</code> map shape introduced in v0.2.1. The runtime meaning of each rating is unchanged — this is a one-shot cleanup so future edits don't leave notes in a mixed state. Shelf snapshots the Books folder to <code>backups/</code> before any Apply.</p>
+
+    <form id="plan-form" class="migrate-plan-form">
+      <button type="submit" class="primary">Preview plan</button>
+    </form>
+
+    <section id="plan-output" aria-live="polite"></section>
+    <div class="sync-apply-row">
+      <button id="apply-btn" type="button" class="primary" disabled>Apply migration</button>
+    </div>
+    <section id="apply-report" aria-live="polite"></section>
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

@@ -90,7 +90,8 @@ GROUP BY s.id, s.name
 SELECT
     b.id, b.filename, b.canonical_name, b.title, b.subtitle, b.publisher,
     b.publish_date, b.total_pages, b.isbn, b.cover, b.format, b.source,
-    b.rating, b.status, b.read_count, b.series_id, b.series_index,
+    b.rating_overall, b.rating_dimensions, b.rating_has_override,
+    b.status, b.read_count, b.series_id, b.series_index,
     b.started_json, b.finished_json, b.size_bytes, b.mtime_ns,
     b.indexed_at_unix, b.warnings_json,
     COALESCE(sr.name, '')

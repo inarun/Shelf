@@ -432,6 +432,20 @@ func (d *Dependencies) SyncPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// MigratePageData is the template data for migrate.html.
+type MigratePageData struct {
+	PageCommon
+}
+
+// MigratePage renders /migrate — the one-shot rating-migration surface
+// introduced in v0.2.1 Session 16. Plan/apply logic lives in
+// migrate_api.go; this handler just renders the form shell.
+func (d *Dependencies) MigratePage(w http.ResponseWriter, r *http.Request) {
+	d.renderHTML(w, r, "migrate", MigratePageData{
+		PageCommon: d.newPageCommon(r, "migrate"),
+	})
+}
+
 // HealthSignature is the stable token emitted by /healthz. The
 // single-instance probe in internal/platform/singleton checks for it
 // so "something is listening on our port" can be distinguished from

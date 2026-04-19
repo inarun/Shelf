@@ -683,6 +683,126 @@
     }
   }
 
+  // initMigrate wires the /migrate page. The three-bucket plan
+  // (will_migrate, will_skip, conflicts) reuses makeSection; the apply
+  // report is a near-copy of renderSyncReport but with "migrated"
+  // instead of "updated". Kept parallel rather than refactored because
+  // the diverging labels aren't worth another shared helper.
+  function initMigrate() {
+    const planForm = document.getElementById("plan-form");
+    const applyBtn = document.getElementById("apply-btn");
+    const planOut = document.getElementById("plan-output");
+    const reportOut = document.getElementById("apply-report");
+    if (!planForm || !applyBtn || !planOut) return;
+    if (!planForm.classList.contains("migrate-plan-form")) return;
+
+    let currentPlan = null;
+
+    planForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await withBusy(planForm.querySelector('button[type="submit"]'), async () => {
+        const resp = await api("POST", "/api/migrate/plan", null, { form: true });
+        if (!resp.ok) {
+          showBanner(planOut, "error", errorText(resp.data, "Plan request failed."));
+          applyBtn.disabled = true;
+          currentPlan = null;
+          return;
+        }
+        currentPlan = resp.data;
+        renderMigratePlan(planOut, currentPlan);
+        applyBtn.disabled = false;
+        toast("ok", "Plan generated");
+      });
+    });
+
+    applyBtn.addEventListener("click", async () => {
+      if (!currentPlan) return;
+      await withBusy(applyBtn, async () => {
+        const fd = new FormData();
+        fd.set("decisions", JSON.stringify(collectDecisions(planOut)));
+        const resp = await api("POST", "/api/migrate/apply", fd, { form: true });
+        if (!resp.ok) {
+          showBanner(reportOut || planOut, "error", errorText(resp.data, "Apply request failed."));
+          return;
+        }
+        renderMigrateReport(reportOut || planOut, resp.data);
+        toast("ok", "Migration applied");
+      });
+    });
+  }
+
+  function renderMigratePlan(host, plan) {
+    host.textContent = "";
+    const header = document.createElement("h2");
+    header.textContent = "Plan preview";
+    host.appendChild(header);
+
+    const summary = document.createElement("p");
+    summary.textContent =
+      (plan.will_migrate || []).length + " to migrate, " +
+      (plan.will_skip || []).length + " already canonical, " +
+      (plan.conflicts || []).length + " conflict";
+    host.appendChild(summary);
+
+    host.appendChild(makeSection("Will migrate", plan.will_migrate || [], "diff-update",
+      (e) => [e.filename, e.reason + " (overall = " + e.old_value + ")"]));
+    host.appendChild(makeSection("Will skip", plan.will_skip || [], "diff-skip",
+      (e) => [e.filename, e.reason]));
+
+    const conflictsSection = document.createElement("section");
+    const h = document.createElement("h3");
+    h.textContent = "Conflicts (" + (plan.conflicts || []).length + ")";
+    conflictsSection.appendChild(h);
+    (plan.conflicts || []).forEach((c, idx) => {
+      const row = document.createElement("div");
+      row.className = "diff-conflict-row";
+      row.setAttribute("data-conflict-row", String(idx));
+      row.setAttribute("data-filename", c.filename);
+
+      const fn = document.createElement("strong");
+      fn.textContent = c.filename;
+      row.appendChild(fn);
+      const reason = document.createElement("p");
+      reason.textContent = c.reason;
+      row.appendChild(reason);
+
+      const accept = makeRadio("migrate_conflict_" + idx, "accept", "Accept", false);
+      const skip = makeRadio("migrate_conflict_" + idx, "skip", "Skip", true);
+      row.appendChild(accept);
+      row.appendChild(skip);
+      conflictsSection.appendChild(row);
+    });
+    host.appendChild(conflictsSection);
+  }
+
+  function renderMigrateReport(host, report) {
+    host.textContent = "";
+    const h = document.createElement("h2");
+    h.textContent = "Apply report";
+    host.appendChild(h);
+
+    const p = document.createElement("p");
+    p.textContent =
+      (report.migrated || []).length + " migrated, " +
+      (report.skipped || []).length + " skipped, " +
+      (report.errors || []).length + " errors.";
+    host.appendChild(p);
+
+    const backup = document.createElement("p");
+    backup.textContent = "Backup: " + (report.backup_root || "(none)");
+    host.appendChild(backup);
+
+    if ((report.errors || []).length > 0) {
+      const ul = document.createElement("ul");
+      report.errors.forEach((e) => {
+        const li = document.createElement("li");
+        li.textContent = e.filename + " (" + e.phase + "): " + e.error;
+        ul.appendChild(li);
+      });
+      host.appendChild(ul);
+    }
+  }
+
   // Add-book page: ISBN + search → preview cards → Add.
   function initAddPage() {
     if (!document.querySelector('main[data-page="add"]')) return;
@@ -948,15 +1068,15 @@
   }
 
   // initShortcuts wires document-level keyboard shortcuts:
-  //   /            — focus the first filter/search input on the page
-  //   g then l|s|a|i (within 600 ms) — navigate to /library, /series, /add, /import
-  //   ?            — toggle the help overlay
-  //   Esc          — close the overlay, or blur the current input
+  //   /              — focus the first filter/search input on the page
+  //   g then l|s|a|i|m (within 600 ms) — navigate to /library, /series, /add, /import, /migrate
+  //   ?              — toggle the help overlay
+  //   Esc            — close the overlay, or blur the current input
   //
   // Keys are ignored while typing in an input/textarea/select or in a
   // contenteditable element so the shortcuts never fight text entry.
   function initShortcuts() {
-    const NAV_CHORD = { l: "/library", s: "/series", a: "/add", i: "/import" };
+    const NAV_CHORD = { l: "/library", s: "/series", a: "/add", i: "/import", m: "/migrate" };
     const CHORD_TIMEOUT_MS = 600;
     const overlay = document.getElementById("kbd-help");
     const openBtn = document.getElementById("kbd-help-btn");
@@ -1151,6 +1271,7 @@
     document.querySelectorAll("[data-review-form]").forEach(initReview);
     initImport();
     initSync();
+    initMigrate();
     initAddPage();
     initCoverControls();
     initLibrarySearch();

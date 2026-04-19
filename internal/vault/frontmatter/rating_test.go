@@ -323,3 +323,52 @@ func TestSetRatingMapRoundTrips(t *testing.T) {
 		t.Errorf("overall not preserved: %v", r2.Overall)
 	}
 }
+
+func TestRatingShape_Absent(t *testing.T) {
+	for _, doc := range [][]byte{
+		[]byte("---\ntitle: foo\n---\nbody\n"),
+		[]byte("---\ntitle: foo\nrating: null\n---\nbody\n"),
+		[]byte("---\ntitle: foo\nrating: ~\n---\nbody\n"),
+	} {
+		f, _, err := Parse(doc)
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if got := f.RatingShape(); got != RatingShapeAbsent {
+			t.Errorf("RatingShape for %q = %v, want Absent", doc, got)
+		}
+	}
+}
+
+func TestRatingShape_LegacyScalar(t *testing.T) {
+	for _, doc := range [][]byte{
+		[]byte("---\ntitle: foo\nrating: 4\n---\nbody\n"),
+		[]byte("---\ntitle: foo\nrating: 4.5\n---\nbody\n"),
+		[]byte("---\ntitle: foo\nrating: 0\n---\nbody\n"),
+	} {
+		f, _, err := Parse(doc)
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if got := f.RatingShape(); got != RatingShapeLegacyScalar {
+			t.Errorf("RatingShape for %q = %v, want LegacyScalar", doc, got)
+		}
+	}
+}
+
+func TestRatingShape_Map(t *testing.T) {
+	docs := [][]byte{
+		[]byte("---\ntitle: foo\nrating:\n  overall: 4\n---\nbody\n"),
+		[]byte("---\ntitle: foo\nrating:\n  trial_system:\n    plot: 5\n---\nbody\n"),
+		[]byte("---\ntitle: foo\nrating:\n  trial_system:\n    plot: 5\n  overall: 6\n---\nbody\n"),
+	}
+	for _, doc := range docs {
+		f, _, err := Parse(doc)
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if got := f.RatingShape(); got != RatingShapeMap {
+			t.Errorf("RatingShape for %q = %v, want Map", doc, got)
+		}
+	}
+}

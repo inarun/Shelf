@@ -23,6 +23,7 @@
   <a href="/add"     {{if eq .ActiveNav "add"}}class="active"{{end}}>Add</a>
   <a href="/import"  {{if eq .ActiveNav "import"}}class="active"{{end}}>Import</a>
   <a href="/sync"    {{if eq .ActiveNav "sync"}}class="active"{{end}}>Sync</a>
+  <a href="/migrate" {{if eq .ActiveNav "migrate"}}class="active"{{end}}>Migrate{{with .PendingMigrations}}{{if gt . 0}} <span class="nav-badge" aria-label="{{.}} pending migration{{pluralS (deref .)}}">{{.}}</span>{{end}}{{end}}</a>
   <button type="button" id="kbd-help-btn" class="secondary kbd-help-btn" aria-haspopup="dialog" aria-controls="kbd-help" aria-label="Keyboard shortcuts (press ?)" title="Keyboard shortcuts (?)">
     <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-keyboard"/></svg>
   </button>
@@ -46,6 +47,7 @@
       <dt><kbd>g</kbd> <kbd>s</kbd></dt><dd>Go to Series</dd>
       <dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Go to Add</dd>
       <dt><kbd>g</kbd> <kbd>i</kbd></dt><dd>Go to Import</dd>
+      <dt><kbd>g</kbd> <kbd>m</kbd></dt><dd>Go to Migrate</dd>
       <dt><kbd>?</kbd></dt><dd>Open / close this help</dd>
       <dt><kbd>Esc</kbd></dt><dd>Close overlays, blur inputs</dd>
     </dl>
@@ -65,7 +67,7 @@
     <p class="author">{{if .Authors}}{{join ", " .Authors}}{{else}}<em>unknown author</em>{{end}}</p>
     <div class="meta-row">
       <span class="status {{statusClass .Status}}">{{statusLabel .Status}}</span>
-      <span class="rating" aria-label="rating">{{stars .Rating}}</span>
+      <span class="rating"{{with formatRating .RatingOverall}} aria-label="rating {{.}} of 5"{{else}} aria-label="unrated"{{end}}>{{stars .RatingOverall}}{{bumpedBadge .RatingOverall}}</span>
     </div>
     {{with dateChipText .Status .StartedDates .FinishedDates}}<p class="date-chip"><small>{{.}}</small></p>{{end}}
     {{if .SeriesName}}<p class="series"><small>{{.SeriesName}}{{if .SeriesIndex}} #{{.SeriesIndex}}{{end}}</small></p>{{end}}

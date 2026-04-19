@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -175,8 +176,8 @@ func captureIndexState(ctx context.Context, s *store.Store) (string, error) {
 		sb.WriteString("|")
 		sb.WriteString(b.Status)
 		sb.WriteString("|")
-		if b.Rating != nil {
-			sb.WriteString(string(rune(*b.Rating + '0')))
+		if b.RatingOverall != nil {
+			sb.WriteString(strconv.FormatFloat(*b.RatingOverall, 'f', 1, 64))
 		}
 		sb.WriteString("|")
 		sb.WriteString(strings.Join(b.StartedDates, ","))

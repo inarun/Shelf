@@ -603,6 +603,52 @@ textarea { resize: vertical; }
   color: var(--star);
   letter-spacing: 1px;
   font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+}
+
+.rating-star {
+  width: 0.95em;
+  height: 0.95em;
+  color: var(--star);
+  vertical-align: -0.125em;
+}
+
+.rating-empty {
+  color: var(--fg-muted);
+}
+
+/* Bumped badge — rendered to the right of the 5-star row when the
+   effective rating exceeds 5 (Trial-System "6/5"-style outliers). The
+   gold background matches --star so the badge reads as an extension of
+   the rating, not a separate metadata chip. */
+.bumped-badge {
+  display: inline-block;
+  margin-left: 0.35em;
+  padding: 0.05em 0.4em;
+  border-radius: 0.5em;
+  background: var(--star);
+  color: var(--bg);
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 1.2;
+  vertical-align: 0.05em;
+}
+
+/* Nav badge — small count chip attached to a nav link (e.g., Migrate)
+   when there's pending work. Uses the accent colour so it doesn't
+   conflict with the rating star gold. */
+.nav-badge {
+  display: inline-block;
+  margin-left: 0.35em;
+  padding: 0 0.4em;
+  border-radius: 0.75em;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 /* ===== Book detail ===== */

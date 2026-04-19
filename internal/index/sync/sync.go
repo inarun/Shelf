@@ -242,10 +242,22 @@ func buildBookRow(filename string, n *note.Note) store.BookRow {
 
 	readCount := int64(fm.ReadCount())
 
-	// The SQLite `rating` column stays scalar through S15 (S16 adds
-	// rating_overall REAL + rating_dimensions JSON). Populate it with
-	// the rounded effective value so card sorting / filtering work.
-	rating := fm.Rating().EffectiveRounded()
+	// v0.2.1 Session 16: fan the Rating struct out into three columns.
+	// RatingOverall carries the full float (possibly >5), RatingDimensions
+	// serialises the per-axis map (empty when not dimensioned), and
+	// RatingHasOverride distinguishes explicit from derived overalls so
+	// the recommender (v0.3) can weight them differently.
+	var (
+		ratingOverall     *float64
+		ratingDimensions  map[string]int
+		ratingHasOverride bool
+	)
+	if r := fm.Rating(); r != nil && !r.IsEmpty() {
+		v := r.Effective()
+		ratingOverall = &v
+		ratingDimensions = r.TrialSystem
+		ratingHasOverride = r.HasOverride()
+	}
 
 	var totalPages *int64
 	if p := fm.TotalPages(); p != nil {
@@ -257,30 +269,32 @@ func buildBookRow(filename string, n *note.Note) store.BookRow {
 	seriesIndex := fm.SeriesIndex()
 
 	row := store.BookRow{
-		Filename:      filename,
-		CanonicalName: canonical,
-		Title:         title,
-		Subtitle:      fm.Subtitle(),
-		Publisher:     fm.Publisher(),
-		PublishDate:   fm.Publish(),
-		TotalPages:    totalPages,
-		ISBN:          fm.ISBN(),
-		Cover:         fm.Cover(),
-		Format:        fm.Format(),
-		Source:        fm.Source(),
-		Rating:        rating,
-		Status:        status,
-		ReadCount:     readCount,
-		SeriesName:    seriesName,
-		SeriesIndex:   seriesIndex,
-		Authors:       authors,
-		Categories:    fm.Categories(),
-		StartedDates:  startedDates,
-		FinishedDates: finishedDates,
-		SizeBytes:     n.Size,
-		MtimeNanos:    n.MtimeNanos,
-		IndexedAtUnix: time.Now().Unix(),
-		Warnings:      warnings,
+		Filename:          filename,
+		CanonicalName:     canonical,
+		Title:             title,
+		Subtitle:          fm.Subtitle(),
+		Publisher:         fm.Publisher(),
+		PublishDate:       fm.Publish(),
+		TotalPages:        totalPages,
+		ISBN:              fm.ISBN(),
+		Cover:             fm.Cover(),
+		Format:            fm.Format(),
+		Source:            fm.Source(),
+		RatingOverall:     ratingOverall,
+		RatingDimensions:  ratingDimensions,
+		RatingHasOverride: ratingHasOverride,
+		Status:            status,
+		ReadCount:         readCount,
+		SeriesName:        seriesName,
+		SeriesIndex:       seriesIndex,
+		Authors:           authors,
+		Categories:        fm.Categories(),
+		StartedDates:      startedDates,
+		FinishedDates:     finishedDates,
+		SizeBytes:         n.Size,
+		MtimeNanos:        n.MtimeNanos,
+		IndexedAtUnix:     time.Now().Unix(),
+		Warnings:          warnings,
 	}
 	return row
 }

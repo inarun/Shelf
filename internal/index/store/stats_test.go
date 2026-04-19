@@ -36,20 +36,22 @@ func seedBook(t *testing.T, s *Store, fn func(*BookRow)) {
 
 func TestStats_Counts(t *testing.T) {
 	s := testStore(t)
-	two := int64(2)
-	four := int64(4)
+	two := 2.0
+	four := 4.0
 	seedBook(t, s, func(b *BookRow) {
 		b.Filename = "A.md"
 		b.Title = "A"
 		b.Status = "finished"
-		b.Rating = &four
+		b.RatingOverall = &four
+		b.RatingHasOverride = true
 		b.ReadCount = 2
 	})
 	seedBook(t, s, func(b *BookRow) {
 		b.Filename = "B.md"
 		b.Title = "B"
 		b.Status = "reading"
-		b.Rating = &two
+		b.RatingOverall = &two
+		b.RatingHasOverride = true
 		b.ReadCount = 0
 	})
 	seedBook(t, s, func(b *BookRow) {

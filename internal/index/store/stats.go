@@ -79,9 +79,9 @@ func (s *Store) readAggregates(ctx context.Context, sm *StatsSummary) error {
 	)
 	err := s.db.QueryRowContext(ctx, `
 SELECT
-    COALESCE(sum(read_count), 0)                                     AS total_reads,
-    COALESCE(sum(CASE WHEN rating IS NOT NULL THEN 1 ELSE 0 END), 0) AS rated_books,
-    COALESCE(avg(rating), 0.0)                                       AS avg_rating
+    COALESCE(sum(read_count), 0)                                             AS total_reads,
+    COALESCE(sum(CASE WHEN rating_overall IS NOT NULL THEN 1 ELSE 0 END), 0) AS rated_books,
+    COALESCE(avg(rating_overall), 0.0)                                       AS avg_rating
 FROM books
 `).Scan(&totalReads, &ratedBooks, &avgRating)
 	if err != nil {
@@ -103,7 +103,7 @@ FROM books
 // can iterate the range without sparse checks.
 func (s *Store) readRatingHistogram(ctx context.Context, sm *StatsSummary) error {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT COALESCE(rating, 0) AS bucket, count(*) AS n
+SELECT COALESCE(CAST(ROUND(rating_overall) AS INTEGER), 0) AS bucket, count(*) AS n
 FROM books
 GROUP BY bucket
 ORDER BY bucket
@@ -183,4 +183,24 @@ ORDER BY year ASC
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Year < out[j].Year })
 	return out, nil
+}
+
+// PendingMigrationsCount returns the number of books whose rating is
+// stored as a scalar-only value (no dimensioned axes). v0.2.1 S16's
+// /migrate page surfaces this count as a nav badge so the user can
+// convert legacy `rating: N` scalars to the canonical map shape.
+//
+// The count over-includes the narrow case of a map-shape rating with
+// only `overall:` set — migrating those is a byte-identical no-op via
+// SetRating, so the slight inflation is harmless.
+func (s *Store) PendingMigrationsCount(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `
+SELECT count(*) FROM books
+WHERE rating_dimensions = '' AND rating_has_override = 1
+`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("store: pending migrations count: %w", err)
+	}
+	return n, nil
 }

@@ -239,8 +239,11 @@ rating: 5
 	if got.Status != "finished" {
 		t.Errorf("status after write got %q", got.Status)
 	}
-	if got.Rating == nil || *got.Rating != 5 {
-		t.Errorf("rating after write got %v", got.Rating)
+	if got.RatingOverall == nil || *got.RatingOverall != 5.0 {
+		t.Errorf("rating after write got %v, want 5.0", got.RatingOverall)
+	}
+	if !got.RatingHasOverride {
+		t.Errorf("RatingHasOverride got false; legacy scalar should carry override flag")
 	}
 }
 

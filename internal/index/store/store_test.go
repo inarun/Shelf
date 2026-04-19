@@ -21,30 +21,30 @@ func openStore(t *testing.T) *Store {
 }
 
 func fixture(name string) BookRow {
-	r := 4
-	rr := int64(r)
+	ratingOverall := 4.0
 	pages := int64(482)
 	return BookRow{
-		Filename:      name,
-		CanonicalName: true,
-		Title:         "Hyperion",
-		Subtitle:      "",
-		Authors:       []string{"Dan Simmons"},
-		Categories:    []string{"science-fiction", "space-opera"},
-		Publisher:     "Doubleday",
-		PublishDate:   "1989-05-26",
-		TotalPages:    &pages,
-		ISBN:          "9780385249492",
-		Format:        "physical",
-		Source:        "Library",
-		Rating:        &rr,
-		Status:        "finished",
-		ReadCount:     1,
-		StartedDates:  []string{"2025-03-09"},
-		FinishedDates: []string{"2025-04-02"},
-		SizeBytes:     2048,
-		MtimeNanos:    1713283200000000000,
-		IndexedAtUnix: 1713283200,
+		Filename:          name,
+		CanonicalName:     true,
+		Title:             "Hyperion",
+		Subtitle:          "",
+		Authors:           []string{"Dan Simmons"},
+		Categories:        []string{"science-fiction", "space-opera"},
+		Publisher:         "Doubleday",
+		PublishDate:       "1989-05-26",
+		TotalPages:        &pages,
+		ISBN:              "9780385249492",
+		Format:            "physical",
+		Source:            "Library",
+		RatingOverall:     &ratingOverall,
+		RatingHasOverride: true,
+		Status:            "finished",
+		ReadCount:         1,
+		StartedDates:      []string{"2025-03-09"},
+		FinishedDates:     []string{"2025-04-02"},
+		SizeBytes:         2048,
+		MtimeNanos:        1713283200000000000,
+		IndexedAtUnix:     1713283200,
 	}
 }
 
@@ -79,8 +79,14 @@ func TestUpsertBook_Insert(t *testing.T) {
 	if len(got.Categories) != 2 {
 		t.Errorf("Categories got %v", got.Categories)
 	}
-	if got.Rating == nil || *got.Rating != 4 {
-		t.Errorf("Rating got %v", got.Rating)
+	if got.RatingOverall == nil || *got.RatingOverall != 4.0 {
+		t.Errorf("RatingOverall got %v, want 4.0", got.RatingOverall)
+	}
+	if !got.RatingHasOverride {
+		t.Errorf("RatingHasOverride got false, want true")
+	}
+	if len(got.RatingDimensions) != 0 {
+		t.Errorf("RatingDimensions got %v, want empty", got.RatingDimensions)
 	}
 }
 

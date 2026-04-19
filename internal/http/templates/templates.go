@@ -19,21 +19,33 @@ var files embed.FS
 // FuncMap is exposed so tests can assert the registered helpers.
 func FuncMap() template.FuncMap {
 	return template.FuncMap{
-		"join":            func(sep string, a []string) string { return strings.Join(a, sep) },
-		"stars":           stars,
-		"statusClass":     statusClass,
-		"statusLabel":     statusLabel,
-		"safeHref":        safeHref,
-		"safeSeriesHref":  safeSeriesHref,
-		"barWidth":        barWidth,
-		"barWidthClass":   barWidthClass,
-		"pluralS":         func(n int) string { if n == 1 { return "" }; return "s" },
-		"emptyOr":         func(s, fallback string) string { if s == "" { return fallback }; return s },
-		"deref":           derefInt,
-		"formatDate":      formatDate,
-		"lastDate":        lastDate,
-		"searchText":      searchText,
-		"dateChipText":    dateChipText,
+		"join":           func(sep string, a []string) string { return strings.Join(a, sep) },
+		"stars":          stars,
+		"bumpedBadge":    bumpedBadge,
+		"formatRating":   formatRating,
+		"statusClass":    statusClass,
+		"statusLabel":    statusLabel,
+		"safeHref":       safeHref,
+		"safeSeriesHref": safeSeriesHref,
+		"barWidth":       barWidth,
+		"barWidthClass":  barWidthClass,
+		"pluralS": func(n int) string {
+			if n == 1 {
+				return ""
+			}
+			return "s"
+		},
+		"emptyOr": func(s, fallback string) string {
+			if s == "" {
+				return fallback
+			}
+			return s
+		},
+		"deref":        derefInt,
+		"formatDate":   formatDate,
+		"lastDate":     lastDate,
+		"searchText":   searchText,
+		"dateChipText": dateChipText,
 	}
 }
 
@@ -50,40 +62,126 @@ func Parse() (*template.Template, error) {
 // walk the raw files (e.g., the "no inline script" guard).
 func FS() embed.FS { return files }
 
-func stars(r any) string {
-	n, ok := ratingInt(r)
+// stars renders a rating as five SVG stars drawn from the sprite
+// (#icon-star-filled, #icon-star-half, #icon-star-outline). Values
+// exceeding 5 are capped at 5 full stars so the card's star row stays
+// five-wide; the bumped N/5 chip next to it (see bumpedBadge) conveys
+// the overflow. Fractional values with a remainder ≥ 0.5 render a
+// half-star sprite; < 0.5 rounds down.
+func stars(r any) template.HTML {
+	val, ok := ratingFloat(r)
 	if !ok {
-		return "—"
+		return template.HTML(`<span class="rating-empty" aria-hidden="true">—</span>`)
 	}
-	if n < 1 || n > 5 {
-		return "—"
+	if val <= 0 {
+		return template.HTML(`<span class="rating-empty" aria-hidden="true">—</span>`)
 	}
-	return strings.Repeat("★", n) + strings.Repeat("☆", 5-n)
+	display := val
+	if display > 5 {
+		display = 5
+	}
+	full := int(display)
+	half := 0
+	if display-float64(full) >= 0.5 {
+		half = 1
+	}
+	if full+half > 5 {
+		full = 5 - half
+	}
+	empty := 5 - full - half
+	var b strings.Builder
+	for i := 0; i < full; i++ {
+		b.WriteString(`<svg class="rating-star" aria-hidden="true" focusable="false"><use href="#icon-star-filled"/></svg>`)
+	}
+	for i := 0; i < half; i++ {
+		b.WriteString(`<svg class="rating-star" aria-hidden="true" focusable="false"><use href="#icon-star-half"/></svg>`)
+	}
+	for i := 0; i < empty; i++ {
+		b.WriteString(`<svg class="rating-star" aria-hidden="true" focusable="false"><use href="#icon-star-outline"/></svg>`)
+	}
+	// #nosec G203 -- b contains only compile-time string literals chosen
+	// by integer counts of full/half/empty stars; no caller-controlled
+	// text flows into it, so template.HTML is safe.
+	return template.HTML(b.String())
 }
 
-func ratingInt(r any) (int, bool) {
+// bumpedBadge renders a small "N/5" chip when the rating exceeds 5.
+// Returns an empty HTML string otherwise so templates can call it
+// unconditionally next to stars().
+func bumpedBadge(r any) template.HTML {
+	val, ok := ratingFloat(r)
+	if !ok || val <= 5 {
+		return template.HTML("")
+	}
+	label := formatRating(val)
+	// #nosec G203 -- `label` is produced by formatRating, which emits
+	// only a canonicalised numeric string ("4", "4.5", "6") from a
+	// float64. No caller-controlled text reaches this template.HTML cast.
+	return template.HTML(fmt.Sprintf(
+		`<span class="bumped-badge" aria-label="bumped rating %s of 5">%s/5</span>`,
+		label, label,
+	))
+}
+
+// formatRating renders a *float64/float64/*int64/int64 as a short numeric
+// string — integers trim the fractional zero ("4" not "4.0") and halves
+// keep one decimal ("4.5"). Returns "" when the value is missing.
+func formatRating(r any) string {
+	val, ok := ratingFloat(r)
+	if !ok {
+		return ""
+	}
+	if val == float64(int64(val)) {
+		return fmt.Sprintf("%d", int64(val))
+	}
+	s := fmt.Sprintf("%.1f", val)
+	return strings.TrimRight(strings.TrimRight(s, "0"), ".")
+}
+
+// ratingFloat is the float-accepting counterpart of the pre-S16
+// ratingInt. The new rating pipeline stores a *float64 (can exceed 5
+// for bumped entries) but tests and legacy code paths may still pass
+// *int / *int64; accept both for compatibility.
+func ratingFloat(r any) (float64, bool) {
 	switch v := r.(type) {
-	case int:
+	case float64:
 		return v, true
-	case *int:
+	case *float64:
 		if v == nil {
 			return 0, false
 		}
 		return *v, true
+	case float32:
+		return float64(v), true
+	case *float32:
+		if v == nil {
+			return 0, false
+		}
+		return float64(*v), true
+	case int:
+		return float64(v), true
+	case *int:
+		if v == nil {
+			return 0, false
+		}
+		return float64(*v), true
 	case int64:
-		return int(v), true
+		return float64(v), true
 	case *int64:
 		if v == nil {
 			return 0, false
 		}
-		return int(*v), true
+		return float64(*v), true
 	}
 	return 0, false
 }
 
 func derefInt(v any) int {
-	n, _ := ratingInt(v)
-	return n
+	f, ok := ratingFloat(v)
+	if !ok {
+		return 0
+	}
+	return int(f)
 }
 
 func statusClass(s string) string {

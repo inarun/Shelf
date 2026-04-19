@@ -144,8 +144,8 @@ func TestApply_UpdateGapFill(t *testing.T) {
 	if row.ISBN != "9780553283686" {
 		t.Errorf("isbn after apply got %q", row.ISBN)
 	}
-	if row.Rating == nil || *row.Rating != 5 {
-		t.Errorf("rating after apply got %v", row.Rating)
+	if row.RatingOverall == nil || *row.RatingOverall != 5.0 {
+		t.Errorf("rating after apply got %v, want 5.0", row.RatingOverall)
 	}
 }
 

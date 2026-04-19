@@ -10,36 +10,48 @@ import (
 )
 
 // BookRow is the flat row representation used by callers. Pointer-typed
-// fields (TotalPages, Rating, SeriesID, SeriesIndex) distinguish "not
-// set" from zero. StartedDates/FinishedDates are ISO-formatted strings
-// matching the vault frontmatter format.
+// fields (TotalPages, RatingOverall, SeriesID, SeriesIndex) distinguish
+// "not set" from zero. StartedDates/FinishedDates are ISO-formatted
+// strings matching the vault frontmatter format.
+//
+// Rating fields (v0.2.1 Session 16):
+//   - RatingOverall: floating-point effective overall (can exceed 5.0 for
+//     "bumped" outliers). nil when the note has no rating.
+//   - RatingDimensions: per-axis integer map matching frontmatter.Rating.
+//     TrialSystem. Empty when the rating is scalar-only (legacy shape or
+//     explicit overall-only map).
+//   - RatingHasOverride: true when the frontmatter supplied an explicit
+//     `overall:` value; false when the overall is derived as the mean of
+//     TrialSystem axes.
 type BookRow struct {
-	ID            int64
-	Filename      string
-	CanonicalName bool
-	Title         string
-	Subtitle      string
-	Publisher     string
-	PublishDate   string
-	TotalPages    *int64
-	ISBN          string
-	Cover         string
-	Format        string
-	Source        string
-	Rating        *int64
-	Status        string
-	ReadCount     int64
-	SeriesID      *int64
-	SeriesName    string
-	SeriesIndex   *float64
-	Authors       []string
-	Categories    []string
-	StartedDates  []string
-	FinishedDates []string
-	SizeBytes     int64
-	MtimeNanos    int64
-	IndexedAtUnix int64
-	Warnings      []string
+	ID                int64
+	Filename          string
+	CanonicalName     bool
+	Title             string
+	Subtitle          string
+	Publisher         string
+	PublishDate       string
+	TotalPages        *int64
+	ISBN              string
+	Cover             string
+	Format            string
+	Source            string
+	RatingOverall     *float64
+	RatingDimensions  map[string]int
+	RatingHasOverride bool
+	Status            string
+	ReadCount         int64
+	SeriesID          *int64
+	SeriesName        string
+	SeriesIndex       *float64
+	Authors           []string
+	Categories        []string
+	StartedDates      []string
+	FinishedDates     []string
+	SizeBytes         int64
+	MtimeNanos        int64
+	IndexedAtUnix     int64
+	Warnings          []string
 }
 
 // FileStat holds the staleness pair used by the sync reconciler to skip
@@ -94,6 +106,18 @@ func (s *Store) UpsertBook(ctx context.Context, row BookRow) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("store: marshal warnings: %w", err)
 	}
+	ratingDimensionsStr := ""
+	if len(row.RatingDimensions) > 0 {
+		b, err := json.Marshal(row.RatingDimensions)
+		if err != nil {
+			return 0, fmt.Errorf("store: marshal rating_dimensions: %w", err)
+		}
+		ratingDimensionsStr = string(b)
+	}
+	ratingHasOverrideInt := 0
+	if row.RatingHasOverride {
+		ratingHasOverrideInt = 1
+	}
 
 	canonicalInt := 0
 	if row.CanonicalName {
@@ -105,44 +129,51 @@ func (s *Store) UpsertBook(ctx context.Context, row BookRow) (int64, error) {
 	const upsertSQL = `
 INSERT INTO books (
     filename, canonical_name, title, subtitle, publisher, publish_date,
-    total_pages, isbn, cover, format, source, rating, status, read_count,
+    total_pages, isbn, cover, format, source,
+    rating_overall, rating_dimensions, rating_has_override,
+    status, read_count,
     series_id, series_index, started_json, finished_json,
     size_bytes, mtime_ns, indexed_at_unix, warnings_json
 ) VALUES (
     ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?,
+    ?, ?, ?,
+    ?, ?,
     ?, ?, ?, ?,
     ?, ?, ?, ?
 )
 ON CONFLICT(filename) DO UPDATE SET
-    canonical_name  = excluded.canonical_name,
-    title           = excluded.title,
-    subtitle        = excluded.subtitle,
-    publisher       = excluded.publisher,
-    publish_date    = excluded.publish_date,
-    total_pages     = excluded.total_pages,
-    isbn            = excluded.isbn,
-    cover           = excluded.cover,
-    format          = excluded.format,
-    source          = excluded.source,
-    rating          = excluded.rating,
-    status          = excluded.status,
-    read_count      = excluded.read_count,
-    series_id       = excluded.series_id,
-    series_index    = excluded.series_index,
-    started_json    = excluded.started_json,
-    finished_json   = excluded.finished_json,
-    size_bytes      = excluded.size_bytes,
-    mtime_ns        = excluded.mtime_ns,
-    indexed_at_unix = excluded.indexed_at_unix,
-    warnings_json   = excluded.warnings_json
+    canonical_name      = excluded.canonical_name,
+    title               = excluded.title,
+    subtitle            = excluded.subtitle,
+    publisher           = excluded.publisher,
+    publish_date        = excluded.publish_date,
+    total_pages         = excluded.total_pages,
+    isbn                = excluded.isbn,
+    cover               = excluded.cover,
+    format              = excluded.format,
+    source              = excluded.source,
+    rating_overall      = excluded.rating_overall,
+    rating_dimensions   = excluded.rating_dimensions,
+    rating_has_override = excluded.rating_has_override,
+    status              = excluded.status,
+    read_count          = excluded.read_count,
+    series_id           = excluded.series_id,
+    series_index        = excluded.series_index,
+    started_json        = excluded.started_json,
+    finished_json       = excluded.finished_json,
+    size_bytes          = excluded.size_bytes,
+    mtime_ns            = excluded.mtime_ns,
+    indexed_at_unix     = excluded.indexed_at_unix,
+    warnings_json       = excluded.warnings_json
 RETURNING id
 `
 	var bookID int64
 	if err := tx.QueryRowContext(ctx, upsertSQL,
 		row.Filename, canonicalInt, row.Title, row.Subtitle, row.Publisher, row.PublishDate,
 		nullableInt64(row.TotalPages), row.ISBN, row.Cover, row.Format, row.Source,
-		nullableInt64(row.Rating), row.Status, row.ReadCount,
+		nullableFloat64(row.RatingOverall), ratingDimensionsStr, ratingHasOverrideInt,
+		row.Status, row.ReadCount,
 		nullableInt64(seriesID), nullableFloat64(row.SeriesIndex),
 		string(startedJSON), string(finishedJSON),
 		row.SizeBytes, row.MtimeNanos, row.IndexedAtUnix, string(warningsJSON),
@@ -242,7 +273,8 @@ const bookSelectByFilename = `
 SELECT
     b.id, b.filename, b.canonical_name, b.title, b.subtitle, b.publisher,
     b.publish_date, b.total_pages, b.isbn, b.cover, b.format, b.source,
-    b.rating, b.status, b.read_count, b.series_id, b.series_index,
+    b.rating_overall, b.rating_dimensions, b.rating_has_override,
+    b.status, b.read_count, b.series_id, b.series_index,
     b.started_json, b.finished_json, b.size_bytes, b.mtime_ns,
     b.indexed_at_unix, b.warnings_json,
     COALESCE(s.name, '')
@@ -302,7 +334,8 @@ const bookSelectByISBN = `
 SELECT
     b.id, b.filename, b.canonical_name, b.title, b.subtitle, b.publisher,
     b.publish_date, b.total_pages, b.isbn, b.cover, b.format, b.source,
-    b.rating, b.status, b.read_count, b.series_id, b.series_index,
+    b.rating_overall, b.rating_dimensions, b.rating_has_override,
+    b.status, b.read_count, b.series_id, b.series_index,
     b.started_json, b.finished_json, b.size_bytes, b.mtime_ns,
     b.indexed_at_unix, b.warnings_json,
     COALESCE(s.name, '')
@@ -338,7 +371,8 @@ func (s *Store) ListBooks(ctx context.Context, f Filter) ([]BookRow, error) {
 	sqlStmt := `SELECT
     b.id, b.filename, b.canonical_name, b.title, b.subtitle, b.publisher,
     b.publish_date, b.total_pages, b.isbn, b.cover, b.format, b.source,
-    b.rating, b.status, b.read_count, b.series_id, b.series_index,
+    b.rating_overall, b.rating_dimensions, b.rating_has_override,
+    b.status, b.read_count, b.series_id, b.series_index,
     b.started_json, b.finished_json, b.size_bytes, b.mtime_ns,
     b.indexed_at_unix, b.warnings_json,
     COALESCE(s.name, '')
@@ -451,20 +485,23 @@ func (s *Store) AllFilenames(ctx context.Context) (map[string]FileStat, error) {
 // implement the single-row Scan shape we need.
 func scanBook(r interface{ Scan(...any) error }) (*BookRow, error) {
 	var (
-		br           BookRow
-		canonicalInt int
-		totalPages   sql.NullInt64
-		rating       sql.NullInt64
-		seriesID     sql.NullInt64
-		seriesIndex  sql.NullFloat64
-		startedJSON  string
-		finishedJSON string
-		warningsJSON string
+		br                   BookRow
+		canonicalInt         int
+		totalPages           sql.NullInt64
+		ratingOverall        sql.NullFloat64
+		ratingDimensionsStr  string
+		ratingHasOverrideInt int
+		seriesID             sql.NullInt64
+		seriesIndex          sql.NullFloat64
+		startedJSON          string
+		finishedJSON         string
+		warningsJSON         string
 	)
 	if err := r.Scan(
 		&br.ID, &br.Filename, &canonicalInt, &br.Title, &br.Subtitle, &br.Publisher,
 		&br.PublishDate, &totalPages, &br.ISBN, &br.Cover, &br.Format, &br.Source,
-		&rating, &br.Status, &br.ReadCount, &seriesID, &seriesIndex,
+		&ratingOverall, &ratingDimensionsStr, &ratingHasOverrideInt,
+		&br.Status, &br.ReadCount, &seriesID, &seriesIndex,
 		&startedJSON, &finishedJSON, &br.SizeBytes, &br.MtimeNanos,
 		&br.IndexedAtUnix, &warningsJSON, &br.SeriesName,
 	); err != nil {
@@ -478,10 +515,16 @@ func scanBook(r interface{ Scan(...any) error }) (*BookRow, error) {
 		v := totalPages.Int64
 		br.TotalPages = &v
 	}
-	if rating.Valid {
-		v := rating.Int64
-		br.Rating = &v
+	if ratingOverall.Valid {
+		v := ratingOverall.Float64
+		br.RatingOverall = &v
 	}
+	if ratingDimensionsStr != "" {
+		if err := json.Unmarshal([]byte(ratingDimensionsStr), &br.RatingDimensions); err != nil {
+			return nil, fmt.Errorf("store: decode rating_dimensions: %w", err)
+		}
+	}
+	br.RatingHasOverride = ratingHasOverrideInt == 1
 	if seriesID.Valid {
 		v := seriesID.Int64
 		br.SeriesID = &v

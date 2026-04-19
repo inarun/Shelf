@@ -9,10 +9,14 @@ import (
 
 // PageCommon is embedded in every page template data struct so
 // renderHTML can inject CSRFToken + RequestID + ActiveNav uniformly.
+// PendingMigrations is the count of book rows with a scalar-only
+// rating; the nav renders a badge on the "Migrate" link when it's
+// non-zero so the one-time v0.2.1 migration is discoverable.
 type PageCommon struct {
-	CSRFToken string
-	RequestID string
-	ActiveNav string
+	CSRFToken         string
+	RequestID         string
+	ActiveNav         string
+	PendingMigrations int64
 }
 
 // renderHTML executes the named template against data. Data is expected
@@ -51,10 +55,26 @@ func (d *Dependencies) renderHTML(w http.ResponseWriter, r *http.Request, name s
 // newPageCommon populates CSRFToken/RequestID/ActiveNav from the
 // request context and the configured HMAC key. Handlers call this
 // when composing the template data struct.
+//
+// PendingMigrations runs a single indexed COUNT query; any error is
+// swallowed (logged at Debug) so a transient DB hiccup never takes a
+// page down — the badge just doesn't render.
 func (d *Dependencies) newPageCommon(r *http.Request, activeNav string) PageCommon {
+	var pending int64
+	if d.Store != nil {
+		if n, err := d.Store.PendingMigrationsCount(r.Context()); err == nil {
+			pending = n
+		} else {
+			d.Logger.Debug("pending migrations count",
+				"request_id", middleware.RequestIDFrom(r.Context()),
+				"err", err,
+			)
+		}
+	}
 	return PageCommon{
-		CSRFToken: middleware.CSRFTokenFor(r.Context(), d.HMACKey),
-		RequestID: middleware.RequestIDFrom(r.Context()),
-		ActiveNav: activeNav,
+		CSRFToken:         middleware.CSRFTokenFor(r.Context(), d.HMACKey),
+		RequestID:         middleware.RequestIDFrom(r.Context()),
+		ActiveNav:         activeNav,
+		PendingMigrations: pending,
 	}
 }

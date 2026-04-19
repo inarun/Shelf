@@ -102,6 +102,43 @@ func (r *Rating) EffectiveRounded() *int64 {
 	return &n
 }
 
+// RatingShape describes the on-disk shape of the rating frontmatter key.
+// v0.2.1 Session 16 uses this to drive the one-time migration from the
+// legacy scalar form to the canonical map form. Semantic parsing (via
+// Rating()) treats both shapes identically; shape detection is purely
+// syntactic.
+type RatingShape int
+
+const (
+	// RatingShapeAbsent means the key is missing or explicitly null.
+	RatingShapeAbsent RatingShape = iota
+	// RatingShapeLegacyScalar means `rating: N` (a bare integer/float).
+	RatingShapeLegacyScalar
+	// RatingShapeMap means `rating: {trial_system: ..., overall: ...}`.
+	RatingShapeMap
+)
+
+// RatingShape reports the on-disk shape of the rating key without
+// interpreting the value. Callers who need the semantic rating should
+// use Rating() instead.
+func (f *Frontmatter) RatingShape() RatingShape {
+	v := f.findValue(KeyRating)
+	if v == nil || v.Tag == "!!null" {
+		return RatingShapeAbsent
+	}
+	switch v.Kind {
+	case yaml.ScalarNode:
+		if v.Value == "" {
+			return RatingShapeAbsent
+		}
+		return RatingShapeLegacyScalar
+	case yaml.MappingNode:
+		return RatingShapeMap
+	default:
+		return RatingShapeAbsent
+	}
+}
+
 // Rating returns the structured rating, or nil when the field is absent
 // or null. Accepts both the new map shape and the legacy scalar form:
 // `rating: 4` deserializes into Rating{Overall: &4.0}. Unknown axis keys
