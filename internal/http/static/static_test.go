@@ -118,3 +118,64 @@ func TestAppJSNoExternalURLs(t *testing.T) {
 		}
 	}
 }
+
+// TestAppCSSSession10DesignSystem guards the typography + motion system
+// added in Session 10. If any of these names drop out of app.css the
+// corresponding visual refinement will silently regress — so we anchor
+// them with cheap string contains checks rather than parsing CSS.
+func TestAppCSSSession10DesignSystem(t *testing.T) {
+	data, err := fs.ReadFile(FS(), "app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(data)
+
+	// Typography system — OpenType feature bundles + tabular-nums grouping.
+	for _, want := range []string{
+		"--font-features-body:",
+		"--font-features-display:",
+		"font-feature-settings: var(--font-features-body)",
+		"font-feature-settings: var(--font-features-display)",
+		"font-variant-numeric: tabular-nums",
+		// Per-size letter-spacing overrides from the Session 10 pass.
+		"letter-spacing: -0.022em",
+		"letter-spacing: -0.015em",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("app.css missing %q — Session 10 typography system", want)
+		}
+	}
+
+	// Motion system — main fade-in + book-grid stagger + button active scale.
+	for _, want := range []string{
+		"--stagger-step:",
+		"@keyframes shelf-main-in",
+		"@keyframes shelf-card-in",
+		"animation: shelf-main-in",
+		"animation: shelf-card-in",
+		".book-grid > .book-card:nth-child(1)",
+		".book-grid > .book-card:nth-child(12)",
+		"calc(var(--stagger-step) * 1)",
+		"translateY(1px) scale(0.98)",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("app.css missing %q — Session 10 motion system", want)
+		}
+	}
+
+	// Brand/logo styles — the Session 10 logo + wordmark pair.
+	for _, want := range []string{
+		"header.site .brand-mark",
+		"header.site .brand-wordmark",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("app.css missing %q — Session 10 brand styles", want)
+		}
+	}
+
+	// Reduced-motion opt-out must still cover animations too — Session 10
+	// added @keyframes so the global kill-switch matters more than before.
+	if !strings.Contains(css, "prefers-reduced-motion") || !strings.Contains(css, "animation: none !important") {
+		t.Errorf("app.css must retain the reduced-motion animation kill-switch")
+	}
+}

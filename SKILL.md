@@ -2,7 +2,7 @@
 
 **Authoritative spec for the Shelf project.** Load this file at the start of every Claude Code session. Every architectural decision, filename, schema, and rule in this document is binding. If a user request contradicts this document, raise the contradiction and ask before proceeding.
 
-Last updated: 2026-04-18 (Session 9 complete — empty states, skip-link, rating fieldset, bar animation, contrast audit tool)
+Last updated: 2026-04-18 (Session 10 complete — v0.1.1 design arc closes: typography + motion system, SVG logo, §Design system captured inline)
 
 ---
 
@@ -322,6 +322,75 @@ cache_ttl_days = 30
 - `server.port` must not be in use.
 - `server.bind` defaults to `127.0.0.1`; warn (don't error) if set to `0.0.0.0` or an external interface — matches §Core Invariant #4.
 
+## Design system
+
+> **2026-04-18 (Session 10):** Consolidated the Sessions 7–10 design arc into one authoritative section so future work doesn't have to reconstruct it from CSS comments and session notes. Everything below is load-bearing for the PWA's visual + accessibility contract.
+
+The frontend is vanilla HTML/CSS/JS served at origin — no framework, no build step, no npm (§Tech stack). Every style lives in `internal/http/static/app.css`; every interaction in `internal/http/static/app.js`; every page template under `internal/http/templates/*.html`. Session 10 closed the v0.1.1 design arc; subsequent sessions should extend this system, not replace it.
+
+### Tokens (`:root` in `app.css`)
+
+- **Surfaces / text:** `--bg`, `--surface`, `--surface-elev`, `--fg`, `--fg-subtle`, `--muted`, `--border`, `--border-strong`. Dark mode overrides every one under `@media (prefers-color-scheme: dark) :root`.
+- **Accent:** single slate-blue `--accent` (`#4b5fd6` light, `#6d7fe0` dark) plus `--accent-hover`, `--accent-fg`, `--accent-ring` (via `color-mix`). Never add a second accent; pick a semantic color instead.
+- **Semantic:** `--success`, `--warn`, `--danger`, `--star`. `--star` is deepened to `#a16207` in the light palette so filled stars clear WCAG 2.2 AA 3:1 non-text contrast on both `--bg` and `--surface` (Session 9).
+- **Spacing:** 4px base. `--space-1` (4) → `--space-8` (64). Use these, not raw pixel values.
+- **Radius:** `--radius-sm` (4), `--radius-md` (6), `--radius-lg` (10), `--radius-pill` (999).
+- **Shadows:** `--shadow-1` / `-2` / `-3` — whispers, not drops. Dark mode uses heavier alpha so elevation still reads.
+- **Motion:** `--motion-fast` (100ms), `--motion-med` (160ms), `--motion-slow` (240ms), `--ease-out` (`cubic-bezier(0.2, 0.7, 0.2, 1)`), `--stagger-step` (20ms — Session 10).
+- **Typography:** `--font-sans` ("Segoe UI Variable Text" + system-ui fallback), `--font-display` ("Segoe UI Variable Display"), `--font-mono` ("Cascadia Code"). Session 10 adds `--font-features-body` and `--font-features-display` bundles of OpenType feature toggles — body gets `kern + liga + calt`, display adds Segoe UI Variable's `ss01 + cv11` stylistic alternates.
+
+### Typography rules
+
+- Body text uses `--font-sans` with `font-feature-settings: var(--font-features-body)`; headings use `--font-display` with `var(--font-features-display)`.
+- Letter-spacing tracks inversely with size (Session 10): `h1 -0.022em`, `h2 -0.015em`, `h3 -0.01em`, `h4 -0.005em`, `.stat-number -0.02em`, `.brand -0.02em`, `.empty-state__title -0.005em`, `.book-card h3 -0.005em`.
+- Tabular numerics apply to every data cell (`td`, `th`, `.book-detail dd`, `.timeline li`, `.stat-number`, `.bar-count`, `.book-card .series`, `.series-list .muted`, `kbd`) via a single grouped rule. Prose keeps proportional defaults.
+
+### Motion language
+
+- **Page load:** `<main>` fades + rises on mount (`shelf-main-in` keyframes, `--motion-slow`). Server-rendered — works with JS off.
+- **Grid load:** each `.book-grid > .book-card` animates in with an `nth-child`-driven delay stepping by `--stagger-step`, capped at 12 children so overflow doesn't trickle forever (`shelf-card-in` keyframes).
+- **Buttons:** `:active` on `.primary` and `.secondary` fires `transform: translateY(1px) scale(0.98)` for a tactile press. `.primary` additionally drops its shadow on press.
+- **Bars:** stats page bar-in tween is JS-driven (`initBarAnimation` in `app.js`): server renders the final `.bar--wN` class so no-JS + reduced-motion paint correct widths immediately; JS strips + restores the class inside `requestAnimationFrame` so the existing CSS `transition: width` tweens them.
+- **Reduced motion:** a global `@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; }}` rule near the top of `app.css` kills every animation + transition. `initBarAnimation` also short-circuits on `matchMedia('(prefers-reduced-motion: reduce)').matches`.
+
+### Icon sprite (`internal/http/templates/_sprite.html`)
+
+A single zero-sized `<svg class="icon-sprite">` holds every icon as a `<symbol>`. The `nav` partial emits the `iconSprite` partial once per page so consumers can write `<svg class="icon"><use href="#icon-..."/></svg>` and inherit color via `currentColor`. Current symbols (12):
+
+- **Brand:** `icon-logo` (Session 10) — a 24×24 bookshelf mark paired with the wordmark in the nav.
+- **Actions:** `icon-star-filled`, `icon-star-outline`, `icon-plus`, `icon-refresh`, `icon-check`, `icon-x`, `icon-search`, `icon-chevron-right`, `icon-keyboard`, `icon-spinner`, `icon-book`.
+- **Empty-state illustrations** (Session 9, 64×64): `icon-empty-shelf`, `icon-empty-chart`, `icon-empty-timeline`.
+
+Adding a symbol: append a `<symbol>` to `_sprite.html`, use a 24×24 viewBox for inline icons or 64×64 for empty-state illustrations, and size via `.icon { width: 1em; height: 1em }` / `.empty-state__icon { width: 64px }` in `app.css`. Color must always be `currentColor`.
+
+### Components
+
+- **`header.site` + `nav`:** sticky top nav with skip-link, icon sprite, brand (logo + wordmark), section links, keyboard-help trigger. `{{define "nav"}}` in `_shared.html`.
+- **`main#main`:** every top-level page carries `id="main"` so the skip-link resolves; enforced by `TestSkipLinkOnEveryPage`.
+- **Buttons:** `.primary` (accent), `.secondary` (surface). `data-busy="true"` renders the inline spinner glyph via `::before`.
+- **Inputs + filter-bar:** `.filter-bar` is a rounded pill holding form controls. Every `<input>`, `<select>`, `<textarea>` has a matching `<label for="id">` (enforced by `TestFormsUseExplicitLabelAssociation`).
+- **`.book-card` / `.book-grid`:** book grid is `auto-fill` with 220px minmax columns. Each card lifts 2px on hover and animates in on page load via the stagger cascade.
+- **`.status-*` pills:** `unread`, `reading`, `paused`, `finished`, `dnf`. Each tints its label with `color-mix(accent/success/warn/danger, surface)`.
+- **Rating widget:** `<fieldset class="rating-widget">` with sr-only legend + five `<button class="rating-star">` children, each carrying `<use href="#icon-star-filled"/>` and a pluralized `aria-label` (enforced by `TestBookDetailRatingUsesStarIcons`, `TestRatingUsesFieldsetWithLegend`).
+- **Empty state:** `.empty-state` block = illustration (`<svg class="empty-state__icon"><use href="#icon-empty-..."/></svg>`) + `.empty-state__title` + `.empty-state__body`. Used on library / series list / series detail / stats per-year / book-detail timeline (enforced by `TestEmptyStatesRenderIllustration`).
+- **Toast region:** bottom-right stack (`#toast-region`) with `aria-live="polite"`. `toast(cls, text)` in `app.js` appends a transient `.toast.toast--ok|--warn|--error`. Every async action emits one on reply.
+- **Keyboard shortcuts:** `/` focuses the filter, `g l|s|a|i` navigates, `?` toggles the `#kbd-help` dialog, `Esc` dismisses. Help overlay renders via the `helpOverlay` partial.
+- **Bar chart:** `<span class="bar bar--wN">` widths come from `barWidthClass` in `internal/http/templates/templates.go`, discretized to 5% steps. Inline `style=""` is forbidden (next section).
+
+### Invariants the design system enforces
+
+- **No inline `style=""` attributes in any template.** CSP `style-src 'self'` (without `'unsafe-inline'`) blocks parsed style attrs. All styling goes through named classes or template helpers like `barWidthClass`. Enforced by `TestNoInlineStyleAttributesInTemplates`.
+- **No inline `<script>` tags.** `script-src 'self'`. External self-hosted `/static/app.js` is the one script. Enforced by `TestNoInlineScriptsInTemplates`.
+- **No external resources.** No CDNs, no Google Fonts, no jsdelivr. Enforced by `TestAppJSNoExternalURLs`, `TestServiceWorkerNoExternalURLs`.
+- **No `.style.*` assignments in `app.js`.** Session 8 converted every one to a class toggle. `app.js` should contain zero occurrences of `.style.` — prefer `classList.add/remove` or data-attributes.
+- **Every form control labeled.** `<label for="id">` required on each `<input>`, `<select>`, `<textarea>`; `.sr-only` is fine for compact UIs. Enforced by `TestFormsUseExplicitLabelAssociation`.
+- **Every top-level page carries `<main id="main">`.** The skip-link target. Enforced by `TestSkipLinkOnEveryPage`.
+- **Service worker `CACHE_VERSION` bumps on every static-asset change** so returning clients install the new bundle. Session 7 → `shelf-v2`, Session 8 → `-v3`, Session 9 → `-v4`, Session 10 → `-v5`.
+
+### Contrast audit tooling
+
+`cmd/a11y-check/main.go` (`//go:build ignore`, stdlib only) parses `:root` + `@media dark :root` from `app.css`, computes WCAG 2.2 AA contrast ratios, and fails on any blocking pair. Runs via `make a11y`. Not wired into `make all`; run manually when the palette changes. See `cmd/a11y-check/main.go` for the curated blocking-pair list.
+
 ## Goodreads CSV import
 
 > **2026-04-17 (Session 3):** Operationalized. Concrete handling captured below: Excel formula ISBN format `="..."` is stripped; dates parse as `YYYY/MM/DD` first and fall back to `YYYY-MM-DD`; titles of the form `Title (Series Name, #N)` split into clean title + series + index (fractional indices like `#1.5` supported); `Bookshelves` column populates `categories` after filtering out the three exclusive-shelf values (`to-read`, `currently-reading`, `read`) which are status-mapping only; multi-author handling combines `Author` and `Additional Authors` (comma-split) into the `authors` array; fuzzy match threshold is Levenshtein ratio ≥ 0.92 on normalized title AND surname exact-normalized match (softer matches become conflicts); `status: unread` is a gap (see §Data precedence exception); review text is written into the `## Notes` section with `_Imported from Goodreads on YYYY-MM-DD_` provenance, every review line blockquote-prefixed (`> `) so a stray `## ` in a review cannot accidentally start a new body section. Apply is sequential, sorted by filename, and accumulates per-entry errors into a report — the backup IS the rollback.
@@ -453,12 +522,15 @@ Session 9 (empty states + a11y) — **complete as of 2026-04-18**:
 - New regression guards in `internal/http/templates/templates_test.go`: `TestSkipLinkOnEveryPage` (every page's `<main>` carries `id="main"`; nav emits the link), `TestRatingUsesFieldsetWithLegend` (fieldset + sr-only legend + h2 preserved + no `role="group"`), `TestEmptyStatesRenderIllustration` (zero-data renders across 5 templates all emit `empty-state__icon` + the matching `use href="#icon-empty-…"`), `TestStatsBarsCarryWidthClass` (every `.bar` retains some `bar--wN` class so the animation has a target), `TestFormsUseExplicitLabelAssociation` (every form control id has a matching `<label for>`).
 - All four security lints (`go vet`, `staticcheck`, `gosec`, `govulncheck`) clean; `go test ./...` green; `cmd/a11y-check` reports all blocking pairs PASS in both palettes.
 
-Session 10 (typography + motion system):
-- Display font-stack refinement; letter-spacing pass on all display headings; `font-feature-settings` for Segoe UI Variable stylistic alternates
-- Tabular numerics on every numeric cell site-wide
-- Coordinated motion language: per-card stagger on grid loads, `<main>` fade-in, tuned button `:active` scale
-- SVG logo + wordmark replacing the text brand link in `_shared.html`
-- Design system captured as a new §Design system section in SKILL.md between §Configuration and §Goodreads CSV import
+Session 10 (typography + motion system) — **complete as of 2026-04-18**:
+- **Typography system** in `internal/http/static/app.css`: new `--font-features-body` (`kern`, `liga`, `calt`) and `--font-features-display` (adds `ss01`, `cv11` — Segoe UI Variable's stylistic alternates for the geometric "a" and one-story "g") tokens; `html, body` sets `font-feature-settings: var(--font-features-body)`, `h1–h4` sets `var(--font-features-display)`. Per-size letter-spacing pass: `h1 -0.022em`, `h2 -0.015em`, `h3 -0.01em`, `h4 -0.005em` (tighter at larger sizes, per Edward Johnston's rule).
+- **Tabular numerics** consolidated into one grouped rule covering `td`, `th`, `.book-detail dd`, `.timeline li`, `.stat-number`, `.bar-count`, `.book-card .series`, `.series-list .muted`, `kbd`. Prose (`<p>`, `<h1..4>` outside data contexts) keeps proportional defaults.
+- **Motion system.** `<main>` fades + rises from `opacity:0 / translateY(4px)` on load (`@keyframes shelf-main-in`, duration `--motion-slow`). `.book-grid > .book-card` animates in (`@keyframes shelf-card-in`) with a server-rendered `nth-child` stagger cascade stepping by `--stagger-step` (20ms), capped at 12 so overflow cards don't trickle forever. Buttons: `.primary:active` and `.secondary:active` now fire `transform: translateY(1px) scale(0.98)` for a tactile press. All animations short-circuit under the existing `@media (prefers-reduced-motion: reduce)` kill-switch.
+- **SVG logo + wordmark.** `_sprite.html` gains `icon-logo` — a 24×24 bookshelf silhouette (rounded frame, horizontal divider, five filled spines) rendered in `currentColor` so it inherits the accent palette. `_shared.html`'s `nav` partial replaces the plain-text `<a class="brand">Shelf</a>` with a flex row of `<svg class="brand-mark"><use href="#icon-logo"/></svg>` + `<span class="brand-wordmark">Shelf</span>`. `.brand` gets `display: inline-flex`, accent-colored mark, letter-spacing `-0.02em`, and the full `--font-features-display` bundle; the link keeps `href="/library"` and gains `aria-label="Shelf — home"` so screen readers still announce it as a home link.
+- **Design system captured** as a new §Design system section in SKILL.md between §Configuration and §Goodreads CSV import. Enumerates tokens, typography rules, motion language, icon sprite catalogue (12 symbols), components, invariants, and contrast audit tooling — the authoritative reference for any subsequent design work.
+- `sw.js` `CACHE_VERSION` bumped `shelf-v4 → shelf-v5` so returning clients pick up the new CSS + sprite on next activation.
+- Regression guards: `TestNavBrandUsesLogoMarkAndWordmark` (brand emits logo mark + wordmark span + `aria-label`), `TestSpriteHasIconLogoSymbol` (sprite defines `#icon-logo` at 24×24), `TestAppCSSSession10DesignSystem` in `internal/http/static/static_test.go` (checks typography tokens, tabular-nums rule, motion keyframes, nth-child stagger with `calc(var(--stagger-step) * N)`, `:active` scale, brand-mark/brand-wordmark selectors, reduced-motion kill-switch).
+- All four security lints clean; all tests green. v0.1.1 design arc closes here.
 
 ### v0.2 — Audiobookshelf sync (future)
 

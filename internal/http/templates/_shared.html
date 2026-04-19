@@ -13,7 +13,10 @@
 <a class="skip-link" href="#main">Skip to main content</a>
 {{template "iconSprite" .}}
 <header class="site"><nav>
-  <a class="brand" href="/library">Shelf</a>
+  <a class="brand" href="/library" aria-label="Shelf — home">
+    <svg class="brand-mark" aria-hidden="true" focusable="false"><use href="#icon-logo"/></svg>
+    <span class="brand-wordmark">Shelf</span>
+  </a>
   <a href="/library" {{if eq .ActiveNav "library"}}class="active"{{end}}>Library</a>
   <a href="/series"  {{if eq .ActiveNav "series"}}class="active"{{end}}>Series</a>
   <a href="/stats"   {{if eq .ActiveNav "stats"}}class="active"{{end}}>Stats</a>

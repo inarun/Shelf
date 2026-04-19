@@ -539,6 +539,60 @@ func mergeMap(base, extra map[string]any) map[string]any {
 	return out
 }
 
+func TestNavBrandUsesLogoMarkAndWordmark(t *testing.T) {
+	// Session 10 replaced the plain-text "Shelf" brand link with a logo
+	// mark + wordmark pair. The link keeps its href="/library" and gains
+	// aria-label="Shelf — home" so screen readers still announce it as
+	// a home link (the visible text is the wordmark span).
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	data := map[string]any{"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library"}
+	if err := tmpl.ExecuteTemplate(&buf, "nav", data); err != nil {
+		t.Fatalf("execute nav: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`class="brand"`,
+		`href="/library"`,
+		// html/template leaves non-ASCII unescaped in attribute context,
+		// so the em-dash passes through verbatim.
+		`aria-label="Shelf — home"`,
+		`class="brand-mark"`,
+		`href="#icon-logo"`,
+		`class="brand-wordmark"`,
+		`>Shelf</span>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("nav brand missing %q; body:\n%s", want, out)
+		}
+	}
+}
+
+func TestSpriteHasIconLogoSymbol(t *testing.T) {
+	// The nav brand references #icon-logo; the sprite must actually
+	// define it. If this guard trips, brand-mark will render blank.
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "iconSprite", nil); err != nil {
+		t.Fatalf("execute iconSprite: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `id="icon-logo"`) {
+		t.Errorf("sprite missing icon-logo symbol; body:\n%s", out)
+	}
+	// Sanity: the symbol should be 24×24 so the existing .icon sizing
+	// works with it (1.25rem → ~20px at 15px base).
+	if !strings.Contains(out, `viewBox="0 0 24 24"`) {
+		t.Errorf("icon-logo should share the 24x24 viewBox used by other nav icons; body:\n%s", out)
+	}
+}
+
 func TestNoInlineScriptsInTemplates(t *testing.T) {
 	// Every <script> tag must have a src= attribute. CSP default-src 'self'
 	// disallows inline scripts; an external self-hosted reference is fine.

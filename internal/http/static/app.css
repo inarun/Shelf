@@ -55,11 +55,25 @@
   --motion-med: 160ms;
   --motion-slow: 240ms;
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* Session 10: the stagger step drives the .book-grid nth-child cascade.
+     20ms × n is lively but below the 250ms threshold where users start
+     perceiving the grid as "loading" rather than "appearing". */
+  --stagger-step: 20ms;
 
-  /* Typography */
+  /* Typography
+     — Segoe UI Variable is the Windows 11 system font and has two optical
+       sizes (Text for body, Display for headings) plus OpenType features
+       we opt into below (kern, liga, calt, ss01, cv11). system-ui is a
+       full fallback for non-Windows dev checks. */
   --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
   --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, Consolas, "SF Mono", monospace;
+
+  /* Session 10: opt into Segoe UI Variable's stylistic alternates + the
+     usual contextual/ligature refinements. These are ignored by fonts
+     that don't ship the feature, so the fallback stack is unaffected. */
+  --font-features-body: "kern" 1, "liga" 1, "calt" 1;
+  --font-features-display: "kern" 1, "liga" 1, "calt" 1, "ss01" 1, "cv11" 1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -109,6 +123,8 @@ html, body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Session 10: enable kerning + contextual alternates on body text. */
+  font-feature-settings: var(--font-features-body);
 }
 
 body {
@@ -117,16 +133,47 @@ body {
   flex-direction: column;
 }
 
+/* Session 10 typography system
+   ---------------------------------------------------------------
+   Letter-spacing tracks inversely with size (Edward Johnston's rule):
+   big display text gets tighter tracking so letters settle as shapes;
+   small text gets looser tracking so it stays readable. The step
+   sizes were chosen by eye at 15px base:
+     h1 -0.022em  — hero headings on library/book detail/stats
+     h2 -0.015em  — section headings
+     h3 -0.01em   — book-card titles, subsection headings
+     h4 -0.005em  — near-zero; only a whisper of negative tracking. */
 h1, h2, h3, h4 {
   font-family: var(--font-display);
   line-height: 1.2;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--fg);
+  /* ss01 + cv11 pick Segoe UI Variable's more geometric alternates for
+     the lowercase "a" and one-story "g" — matching its marketing voice. */
+  font-feature-settings: var(--font-features-display);
 }
-h1 { font-size: 1.6rem; margin: 0 0 var(--space-2); }
-h2 { font-size: 1.15rem; margin: var(--space-5) 0 var(--space-2); }
-h3 { font-size: 1rem;    margin: 0 0 var(--space-1); }
+h1 { font-size: 1.6rem;  margin: 0 0 var(--space-2);            letter-spacing: -0.022em; }
+h2 { font-size: 1.15rem; margin: var(--space-5) 0 var(--space-2); letter-spacing: -0.015em; }
+h3 { font-size: 1rem;    margin: 0 0 var(--space-1);            letter-spacing: -0.01em; }
+h4 {                                                            letter-spacing: -0.005em; }
+
+/* Tabular numerics on every data cell so number columns align
+   vertically across row boundaries. Prose elements (<p>, body, <h1..4>
+   outside of data contexts) keep proportional defaults — tabular-nums
+   only affects digits, and in a dense data app like Shelf, the cost
+   of slightly-wider narrow digits inside prose is negligible vs. the
+   win in scannable columns. */
+td, th,
+.book-detail dd,
+.timeline li,
+.stat-number,
+.bar-count,
+.book-card .series,
+.series-list .muted,
+kbd {
+  font-variant-numeric: tabular-nums;
+}
 
 p  { margin: var(--space-1) 0; color: var(--fg-subtle); }
 a  { color: var(--accent); text-decoration: none; transition: color var(--motion-fast) var(--ease-out); }
@@ -191,15 +238,33 @@ header.site nav {
   margin: 0 auto;
 }
 
+/* Session 10: brand is now icon + wordmark, laid out as an inline flex
+   row so the logo mark sits tight next to the "Shelf" type. The mark
+   takes the accent color (one bright moment per page); the wordmark
+   uses --fg so it stays legible across palettes. */
 header.site .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.05rem;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
   color: var(--fg);
   margin-right: var(--space-3);
+  font-feature-settings: var(--font-features-display);
 }
 header.site .brand:hover { color: var(--fg); }
+header.site .brand-mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+header.site .brand-wordmark {
+  display: inline-block;
+  line-height: 1;
+}
 
 header.site nav a {
   position: relative;
@@ -229,6 +294,16 @@ main {
   width: 100%;
   margin: 0 auto;
   padding: var(--space-5);
+  /* Session 10: subtle fade + rise on page load. The @keyframes and the
+     `both` fill-mode mean no-animation fallback is invisible (the end
+     state is identity). Reduced-motion users short-circuit this via the
+     global @media rule near the top of the file. */
+  animation: shelf-main-in var(--motion-slow) var(--ease-out) both;
+}
+
+@keyframes shelf-main-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ===== Buttons ===== */
@@ -262,9 +337,14 @@ button.primary:hover:not(:disabled),
   border-color: var(--accent-hover);
   box-shadow: var(--shadow-1);
 }
+/* Session 10: `:active` combines a 1px press-down with a 2% scale-in
+   for a tactile "pressed" feel. transform-origin defaults to center so
+   the shrink reads as a push, not a slide. The translation stays so the
+   shadow drop under .primary still reads as the button settling onto
+   the surface. */
 button.primary:active:not(:disabled),
 .primary:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.98);
   box-shadow: none;
 }
 
@@ -281,7 +361,7 @@ button.secondary:hover:not(:disabled),
 }
 button.secondary:active:not(:disabled),
 .secondary:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.98);
 }
 
 button:disabled,
@@ -381,6 +461,33 @@ textarea { resize: vertical; }
   box-shadow: var(--shadow-2);
   border-color: var(--border-strong);
 }
+
+/* Session 10: per-card stagger on the library / series-detail grids.
+   Each card animates from +8px / opacity 0 with a delay that steps by
+   --stagger-step. nth-child drives the cascade server-side so the UX
+   works with JS disabled; the cascade caps at 12 so overflow cards
+   (below the fold) don't incur absurd delays. reduced-motion users
+   short-circuit via the global @media rule. */
+@keyframes shelf-card-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.book-grid > .book-card {
+  animation: shelf-card-in var(--motion-med) var(--ease-out) both;
+}
+.book-grid > .book-card:nth-child(1)  { animation-delay: calc(var(--stagger-step) * 1); }
+.book-grid > .book-card:nth-child(2)  { animation-delay: calc(var(--stagger-step) * 2); }
+.book-grid > .book-card:nth-child(3)  { animation-delay: calc(var(--stagger-step) * 3); }
+.book-grid > .book-card:nth-child(4)  { animation-delay: calc(var(--stagger-step) * 4); }
+.book-grid > .book-card:nth-child(5)  { animation-delay: calc(var(--stagger-step) * 5); }
+.book-grid > .book-card:nth-child(6)  { animation-delay: calc(var(--stagger-step) * 6); }
+.book-grid > .book-card:nth-child(7)  { animation-delay: calc(var(--stagger-step) * 7); }
+.book-grid > .book-card:nth-child(8)  { animation-delay: calc(var(--stagger-step) * 8); }
+.book-grid > .book-card:nth-child(9)  { animation-delay: calc(var(--stagger-step) * 9); }
+.book-grid > .book-card:nth-child(10) { animation-delay: calc(var(--stagger-step) * 10); }
+.book-grid > .book-card:nth-child(11) { animation-delay: calc(var(--stagger-step) * 11); }
+.book-grid > .book-card:nth-child(12) { animation-delay: calc(var(--stagger-step) * 12); }
+/* n ≥ 13: no extra delay so deep scrolls don't trickle in forever. */
 
 .book-card a {
   color: var(--fg);
