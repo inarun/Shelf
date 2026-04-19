@@ -213,3 +213,73 @@ func TestHealth(t *testing.T) {
 		t.Errorf("HealthSignature must contain 'shelf' so the single-instance probe can match; got %q", HealthSignature)
 	}
 }
+
+// TestComposeTimeline exercises the pairing logic end-to-end: two
+// finished pairs produce two "finished" entries; a trailing started
+// with no finished pairs with the current Status; legacy gaps earlier
+// in the sequence stay stateless.
+func TestComposeTimeline(t *testing.T) {
+	t.Run("paused trail", func(t *testing.T) {
+		got := composeTimeline(
+			[]string{"2024-01-10", "2025-01-15", "2025-11-20"},
+			[]string{"2024-03-20", "2025-03-28"},
+			"paused",
+		)
+		if len(got) != 3 {
+			t.Fatalf("len = %d, want 3", len(got))
+		}
+		if got[0].State != "finished" || got[1].State != "finished" {
+			t.Errorf("first two entries must be finished: %+v", got)
+		}
+		if got[2].State != "paused" {
+			t.Errorf("trailing unfinished entry must take Status 'paused': %+v", got[2])
+		}
+		if got[2].Label != "Paused, last started 2025-11-20" {
+			t.Errorf("label = %q", got[2].Label)
+		}
+	})
+	t.Run("reading with no prior", func(t *testing.T) {
+		got := composeTimeline([]string{"2025-06-01"}, nil, "reading")
+		if len(got) != 1 || got[0].State != "reading" {
+			t.Errorf("reading-only: %+v", got)
+		}
+		if got[0].Label != "Reading since 2025-06-01" {
+			t.Errorf("label = %q", got[0].Label)
+		}
+	})
+	t.Run("finished terminal", func(t *testing.T) {
+		got := composeTimeline([]string{"2025-01-10"}, []string{"2025-02-20"}, "finished")
+		if len(got) != 1 || got[0].State != "finished" {
+			t.Errorf("finished: %+v", got)
+		}
+	})
+	t.Run("dnf terminal", func(t *testing.T) {
+		got := composeTimeline([]string{"2025-05-01"}, nil, "dnf")
+		if got[0].State != "dnf" || got[0].Label != "Stopped reading, last started 2025-05-01" {
+			t.Errorf("dnf: %+v", got[0])
+		}
+	})
+	t.Run("nothing", func(t *testing.T) {
+		if got := composeTimeline(nil, nil, ""); got != nil {
+			t.Errorf("want nil, got %+v", got)
+		}
+	})
+	t.Run("legacy gap earlier in sequence", func(t *testing.T) {
+		// started[0] without finished[0] but NOT the trailing pair →
+		// legacy historical entry, no State inferred from current Status.
+		got := composeTimeline(
+			[]string{"2023-06-01", "2024-01-01"},
+			[]string{"", "2024-04-01"},
+			"finished",
+		)
+		if len(got) != 2 {
+			t.Fatalf("len = %d", len(got))
+		}
+		if got[0].State != "" {
+			t.Errorf("historical gap must have empty State, got %q", got[0].State)
+		}
+		if got[1].State != "finished" {
+			t.Errorf("terminal pair state = %q", got[1].State)
+		}
+	})
+}

@@ -27,11 +27,13 @@ type APIErrorBody struct {
 func (d *Dependencies) writeJSONError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(APIError{Error: APIErrorBody{
+	if err := json.NewEncoder(w).Encode(APIError{Error: APIErrorBody{
 		Code:      code,
 		Message:   msg,
 		RequestID: middleware.RequestIDFrom(r.Context()),
-	}})
+	}}); err != nil {
+		d.Logger.Debug("json error encode failed", "code", code, "err", err)
+	}
 }
 
 // renderErrorPage renders the error.html template for browser routes.
@@ -52,6 +54,8 @@ func (d *Dependencies) renderErrorPage(w http.ResponseWriter, r *http.Request, s
 	}
 	if err := d.Templates.ExecuteTemplate(w, "error", data); err != nil {
 		d.Logger.Error("error-page template failed", "err", err)
-		_, _ = w.Write([]byte("<!doctype html><title>" + http.StatusText(status) + "</title><h1>" + http.StatusText(status) + "</h1>"))
+		if _, werr := w.Write([]byte("<!doctype html><title>" + http.StatusText(status) + "</title><h1>" + http.StatusText(status) + "</h1>")); werr != nil {
+			d.Logger.Debug("error-page fallback write failed", "err", werr)
+		}
 	}
 }

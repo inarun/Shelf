@@ -257,5 +257,27 @@ func (w *Watcher) emit(path string) {
 		// blocking indefinitely; a consumer that falls behind will
 		// eventually catch up on the next event it misses nothing
 		// durable because the index is re-derivable from a full scan.
+		//
+		// Surface the drop on the errors channel so a slow consumer is
+		// diagnosable rather than silent. The errors channel has its
+		// own default-drop fallback so a full errs channel can't
+		// re-deadlock the watcher.
+		select {
+		case w.errs <- fmt.Errorf("watcher: dropped %s event for %s (consumer blocked >1s)", kind, path):
+		default:
+		}
 	}
+}
+
+// String names each Kind for diagnostic messages.
+func (k Kind) String() string {
+	switch k {
+	case KindCreate:
+		return "create"
+	case KindWrite:
+		return "write"
+	case KindRemove:
+		return "remove"
+	}
+	return "unknown"
 }

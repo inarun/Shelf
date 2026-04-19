@@ -40,7 +40,7 @@
       </button>
     </div>
     <dl class="kbd-help-list">
-      <dt><kbd>/</kbd></dt><dd>Focus the filter or search input on this page</dd>
+      <dt><kbd>/</kbd></dt><dd>Focus the search or filter input on this page</dd>
       <dt><kbd>g</kbd> <kbd>l</kbd></dt><dd>Go to Library</dd>
       <dt><kbd>g</kbd> <kbd>s</kbd></dt><dd>Go to Series</dd>
       <dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Go to Add</dd>
@@ -57,7 +57,7 @@
 {{end}}
 
 {{define "bookCard"}}
-<article class="book-card">
+<article class="book-card" data-search="{{searchText .Title .Subtitle .SeriesName .Authors}}">
   <a href="{{safeHref .Filename}}">
     {{if .Cover}}<img class="book-cover" src="{{.Cover}}" alt="Cover of {{.Title}}" loading="lazy">{{end}}
     <h3>{{.Title}}</h3>
@@ -66,6 +66,7 @@
       <span class="status {{statusClass .Status}}">{{statusLabel .Status}}</span>
       <span class="rating" aria-label="rating">{{stars .Rating}}</span>
     </div>
+    {{with dateChipText .Status .StartedDates .FinishedDates}}<p class="date-chip"><small>{{.}}</small></p>{{end}}
     {{if .SeriesName}}<p class="series"><small>{{.SeriesName}}{{if .SeriesIndex}} #{{.SeriesIndex}}{{end}}</small></p>{{end}}
   </a>
 </article>

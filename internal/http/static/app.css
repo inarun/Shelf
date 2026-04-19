@@ -438,6 +438,58 @@ textarea { resize: vertical; }
   border-radius: var(--radius-md);
 }
 
+.search-input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--motion-fast) var(--ease-out),
+              box-shadow var(--motion-fast) var(--ease-out);
+}
+.search-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.search-input .icon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.search-input input[type="search"] {
+  border: none;
+  background: transparent;
+  padding: var(--space-2) 0;
+  min-width: 16ch;
+}
+.search-input input[type="search"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.search-count {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.linklike:hover,
+.linklike:focus-visible {
+  color: var(--accent-hover);
+}
+
 /* ===== Library grid + book cards ===== */
 .book-grid {
   display: grid;
@@ -514,6 +566,13 @@ textarea { resize: vertical; }
   justify-content: space-between;
   font-size: 0.8rem;
   margin-top: var(--space-2);
+}
+
+.book-card .date-chip {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: var(--space-1) 0 0 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .book-card .series {
@@ -709,7 +768,8 @@ textarea { resize: vertical; }
 .toast--error { border-left: 3px solid var(--danger);  padding-left: calc(var(--space-4) - 3px); }
 
 /* ===== Timeline ===== */
-.timeline ul {
+.timeline ul,
+.timeline ol {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -723,6 +783,29 @@ textarea { resize: vertical; }
   font-variant-numeric: tabular-nums;
 }
 .timeline li:last-child { border-bottom: none; }
+
+.timeline-entry .timeline-verb {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.timeline-entry--reading,
+.timeline-entry--paused,
+.timeline-entry--dnf {
+  color: var(--fg);
+}
+
+.timeline-notes-heading {
+  margin-top: var(--space-3);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.timeline-notes li {
+  color: var(--fg-subtle);
+}
 
 /* ===== Diff / import tables ===== */
 .diff-table {

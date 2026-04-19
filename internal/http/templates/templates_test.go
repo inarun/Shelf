@@ -29,24 +29,27 @@ func TestLibraryRendersBooks(t *testing.T) {
 	}
 	rating := 4
 	type bookRow struct {
-		Filename, Title    string
-		Authors            []string
-		Status, SeriesName string
-		SeriesIndex        any
-		Rating             *int
-		Cover              string
+		Filename, Title, Subtitle string
+		Authors                   []string
+		Status, SeriesName        string
+		SeriesIndex               any
+		Rating                    *int
+		Cover                     string
+		StartedDates              []string
+		FinishedDates             []string
 	}
 	data := struct {
 		CSRFToken, RequestID, ActiveNav string
 		Books                           []bookRow
-		Filter                          struct{ Status string }
+		Filter                          struct{ Status, Query string }
 	}{
 		CSRFToken: "t", RequestID: "r", ActiveNav: "library",
 	}
 	data.Books = append(data.Books, bookRow{
 		Filename: "Hyperion by Dan Simmons.md", Title: "Hyperion",
 		Authors: []string{"Dan Simmons"}, Status: "reading", Rating: &rating,
-		Cover: "/covers/" + strings.Repeat("a", 64) + ".jpg",
+		Cover:        "/covers/" + strings.Repeat("a", 64) + ".jpg",
+		StartedDates: []string{"2025-06-01"},
 	})
 
 	var buf bytes.Buffer
@@ -617,5 +620,241 @@ func TestNoInlineScriptsInTemplates(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFormatDate(t *testing.T) {
+	cases := map[string]string{
+		"2025-04-18": "2025-04-18",
+		" 2025-04-18 ": "2025-04-18",
+		"":            "",
+		"not-a-date":  "",
+		"2025/04/18":  "",
+	}
+	for in, want := range cases {
+		if got := formatDate(in); got != want {
+			t.Errorf("formatDate(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLastDate(t *testing.T) {
+	if lastDate(nil) != "" {
+		t.Errorf("nil must return empty")
+	}
+	if lastDate([]string{}) != "" {
+		t.Errorf("empty must return empty")
+	}
+	if lastDate([]string{"a", "b", "c"}) != "c" {
+		t.Errorf("last element should win")
+	}
+}
+
+func TestSearchText(t *testing.T) {
+	got := searchText("  The  Ocean ", "At the End of the Lane", "Neverwhere",
+		[]string{"Neil Gaiman"})
+	want := "the ocean at the end of the lane neverwhere neil gaiman"
+	if got != want {
+		t.Errorf("searchText = %q, want %q", got, want)
+	}
+}
+
+func TestDateChipText(t *testing.T) {
+	// finished → last finished
+	if got := dateChipText("finished", []string{"2025-01-01"}, []string{"2025-03-15", "2025-04-10"}); got != "Finished 2025-04-10" {
+		t.Errorf("finished chip = %q", got)
+	}
+	// reading/paused/dnf → last started
+	if got := dateChipText("reading", []string{"2025-02-01"}, nil); got != "Reading since 2025-02-01" {
+		t.Errorf("reading chip = %q", got)
+	}
+	if got := dateChipText("paused", []string{"2025-02-01", "2025-05-01"}, nil); got != "Paused since 2025-05-01" {
+		t.Errorf("paused chip = %q", got)
+	}
+	if got := dateChipText("dnf", []string{"2025-02-01"}, nil); got != "Stopped 2025-02-01" {
+		t.Errorf("dnf chip = %q", got)
+	}
+	// unread → empty
+	if got := dateChipText("unread", []string{"2025-02-01"}, nil); got != "" {
+		t.Errorf("unread chip = %q, want empty", got)
+	}
+	// finished without finish date → empty (no fabricated chip)
+	if got := dateChipText("finished", []string{"2025-02-01"}, nil); got != "" {
+		t.Errorf("finished-without-date chip = %q, want empty", got)
+	}
+}
+
+// TestLibraryHasSearchInput asserts the /library filter bar carries a
+// type="search" input with id="library-search" and role="search" on the
+// form; and that the search input appears *before* the status select in
+// DOM order so the `/` keyboard shortcut focuses it first via
+// `.filter-bar input` selector.
+func TestLibraryHasSearchInput(t *testing.T) {
+	data, err := fs.ReadFile(FS(), "library.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(data)
+	if !strings.Contains(src, `role="search"`) {
+		t.Errorf("library.html filter-bar must have role=\"search\"")
+	}
+	if !strings.Contains(src, `id="library-search"`) || !strings.Contains(src, `type="search"`) {
+		t.Errorf("library.html must have <input id=\"library-search\" type=\"search\">")
+	}
+	searchIdx := strings.Index(src, `id="library-search"`)
+	statusIdx := strings.Index(src, `id="status-filter"`)
+	if searchIdx < 0 || statusIdx < 0 {
+		t.Fatalf("expected both search and status inputs; searchIdx=%d statusIdx=%d", searchIdx, statusIdx)
+	}
+	if searchIdx > statusIdx {
+		t.Errorf("#library-search must appear before #status-filter so `/` shortcut focuses search first")
+	}
+	if !strings.Contains(src, `id="search-empty"`) {
+		t.Errorf("library.html must carry a #search-empty region for no-match state")
+	}
+	if !strings.Contains(src, `aria-live="polite"`) {
+		t.Errorf("library.html must carry aria-live on the count region")
+	}
+}
+
+// TestBookCardHasDataSearchAttr asserts the shared bookCard partial
+// renders a data-search attribute (client-side filter haystack) and
+// that searchText() produces a lowercase, whitespace-normalized value.
+func TestBookCardHasDataSearchAttr(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := struct {
+		Filename, Title, Subtitle, SeriesName, Status string
+		Authors                                       []string
+		Rating                                        *int
+		SeriesIndex                                   any
+		Cover                                         string
+		StartedDates, FinishedDates                   []string
+	}{
+		Filename:   "Dune by Frank Herbert.md",
+		Title:      "Dune",
+		Subtitle:   "Dune Chronicles 1",
+		Authors:    []string{"Frank Herbert"},
+		SeriesName: "Dune",
+		Status:     "finished",
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "bookCard", row); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `data-search="`) {
+		t.Errorf("bookCard missing data-search attr; got: %s", out)
+	}
+	if !strings.Contains(out, "dune dune chronicles 1 dune frank herbert") {
+		t.Errorf("searchText should emit lowercase normalized haystack; got: %s", out)
+	}
+}
+
+// TestBookDetailRendersStructuredTimeline exercises the paired-entry
+// rendering path: two finished entries + one unfinished+paused entry
+// should produce three <li>s, each with a <time datetime="…"> element.
+// The final entry carries the 'paused' state label.
+func TestBookDetailRendersStructuredTimeline(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken":   "t",
+		"RequestID":   "r",
+		"ActiveNav":   "library",
+		"Warnings":    []string{},
+		"RatingRange": []int{1, 2, 3, 4, 5},
+		"Book": map[string]any{
+			"Filename":      "Cryptonomicon by Neal Stephenson.md",
+			"Title":         "Cryptonomicon",
+			"Authors":       []string{"Neal Stephenson"},
+			"Status":        "paused",
+			"Rating":        (*int)(nil),
+			"Review":        "",
+			"TimelineLines": []string{},
+			"CanonicalName": true,
+			"Cover":         "",
+			"ISBN":          "",
+			"SeriesName":    "",
+			"SeriesIndex":   (*float64)(nil),
+			"StartedDates":  []string{"2024-01-10", "2025-01-15", "2025-11-20"},
+			"FinishedDates": []string{"2024-03-20", "2025-03-28"},
+			"Timeline": []map[string]any{
+				{"Started": "2024-01-10", "Finished": "2024-03-20", "State": "finished", "Label": "Started 2024-01-10, finished 2024-03-20"},
+				{"Started": "2025-01-15", "Finished": "2025-03-28", "State": "finished", "Label": "Started 2025-01-15, finished 2025-03-28"},
+				{"Started": "2025-11-20", "Finished": "", "State": "paused", "Label": "Paused, last started 2025-11-20"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "book_detail", data); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `class="timeline-entries"`) {
+		t.Errorf("missing <ol class=\"timeline-entries\">; got:\n%s", out)
+	}
+	if strings.Count(out, "<li class=\"timeline-entry") != 3 {
+		t.Errorf("expected 3 timeline-entry <li>s, got output:\n%s", out)
+	}
+	if !strings.Contains(out, `<time datetime="2024-03-20">2024-03-20</time>`) {
+		t.Errorf("first finished entry must render <time datetime=\"…\">; got:\n%s", out)
+	}
+	if !strings.Contains(out, `class="timeline-entry timeline-entry--paused"`) {
+		t.Errorf("final entry must carry timeline-entry--paused class; got:\n%s", out)
+	}
+	if !strings.Contains(out, `aria-label="Paused, last started 2025-11-20"`) {
+		t.Errorf("final entry must carry composed aria-label; got:\n%s", out)
+	}
+	// Empty-state should NOT render when Timeline is non-empty.
+	if strings.Contains(out, "No timeline entries yet") {
+		t.Errorf("empty state must not render when Timeline has entries; got:\n%s", out)
+	}
+}
+
+// TestCardCarriesDateChipForFinishedBook asserts the finished chip
+// renders the last finished date and that unread books render no chip.
+func TestCardCarriesDateChipForFinishedBook(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type card struct {
+		Filename, Title, Subtitle, SeriesName, Status string
+		Authors                                       []string
+		Rating                                        *int
+		SeriesIndex                                   any
+		Cover                                         string
+		StartedDates, FinishedDates                   []string
+	}
+	finished := card{
+		Filename: "A by Z.md", Title: "A", Authors: []string{"Z"},
+		Status:        "finished",
+		StartedDates:  []string{"2025-02-01"},
+		FinishedDates: []string{"2025-04-10"},
+	}
+	unread := card{
+		Filename: "B by Z.md", Title: "B", Authors: []string{"Z"},
+		Status: "unread",
+	}
+	var fbuf, ubuf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&fbuf, "bookCard", finished); err != nil {
+		t.Fatalf("finished execute: %v", err)
+	}
+	if err := tmpl.ExecuteTemplate(&ubuf, "bookCard", unread); err != nil {
+		t.Fatalf("unread execute: %v", err)
+	}
+	if !strings.Contains(fbuf.String(), `class="date-chip"`) {
+		t.Errorf("finished card missing date-chip; got:\n%s", fbuf.String())
+	}
+	if !strings.Contains(fbuf.String(), "Finished 2025-04-10") {
+		t.Errorf("finished card must show the last finished date; got:\n%s", fbuf.String())
+	}
+	if strings.Contains(ubuf.String(), `class="date-chip"`) {
+		t.Errorf("unread card must NOT render a date-chip; got:\n%s", ubuf.String())
 	}
 }

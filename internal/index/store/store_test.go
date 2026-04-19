@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -372,6 +374,46 @@ func TestGetBookByISBN_EmptyRejects(t *testing.T) {
 	_, err := s.GetBookByISBN(ctx, "")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound for empty ISBN query, got %v", err)
+	}
+}
+
+// TestUpsertBook_ConcurrentWriters guards the busy_timeout +
+// SetMaxOpenConns(1) configuration in Open. Pre-fix, parallel writers
+// would race for the WAL write lock and the loser would receive
+// SQLITE_BUSY immediately. Post-fix, writers serialize at the Go pool
+// layer (one open conn) and any residual contention is absorbed by the
+// 5s busy_timeout. Mirrors the importer-vs-watcher contention pattern
+// that produced the original 8 reindex errors during a Goodreads import.
+func TestUpsertBook_ConcurrentWriters(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+
+	const n = 20
+	var wg sync.WaitGroup
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			row := fixture(fmt.Sprintf("book-%02d.md", i))
+			row.Title = fmt.Sprintf("Book %02d", i)
+			if _, err := s.UpsertBook(ctx, row); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("concurrent UpsertBook: %v", err)
+	}
+
+	got, err := s.AllFilenames(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != n {
+		t.Errorf("expected %d rows after concurrent inserts, got %d", n, len(got))
 	}
 }
 

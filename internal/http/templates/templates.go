@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"net/url"
 	"strings"
+	"time"
 )
 
 //go:embed *.html
@@ -29,6 +30,10 @@ func FuncMap() template.FuncMap {
 		"pluralS":         func(n int) string { if n == 1 { return "" }; return "s" },
 		"emptyOr":         func(s, fallback string) string { if s == "" { return fallback }; return s },
 		"deref":           derefInt,
+		"formatDate":      formatDate,
+		"lastDate":        lastDate,
+		"searchText":      searchText,
+		"dateChipText":    dateChipText,
 	}
 }
 
@@ -159,4 +164,86 @@ func barWidthClass(value, max int64) string {
 		step = 0
 	}
 	return fmt.Sprintf("bar--w%d", step*5)
+}
+
+// isoDateFormat is the canonical vault date layout. Kept here rather
+// than importing from internal/vault/frontmatter so the templates
+// package stays a leaf with zero internal dependencies.
+const isoDateFormat = "2006-01-02"
+
+// formatDate returns a trimmed ISO date unchanged, or "" for unparseable
+// input. The point is to let templates gate rendering on {{if
+// (formatDate .)}} without catching malformed cells. Output is the same
+// string on success — no locale-aware reformatting here; the UI shows
+// canonical YYYY-MM-DD so re-reads sort lexicographically.
+func formatDate(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if _, err := time.Parse(isoDateFormat, s); err != nil {
+		return ""
+	}
+	return s
+}
+
+// lastDate returns the final element of dates or "" when dates is
+// empty. Used to surface the most-recent entry from the started/
+// finished arrays.
+func lastDate(dates []string) string {
+	if len(dates) == 0 {
+		return ""
+	}
+	return dates[len(dates)-1]
+}
+
+// searchText composes the lowercased haystack emitted as data-search on
+// each book card. The client-side library filter does a plain substring
+// check against this string, so all searchable fields must be present
+// here. Authors come in as []string (join-separated); everything else
+// is a scalar. Whitespace is normalized to single spaces so tests can
+// assert exact output.
+func searchText(title, subtitle, seriesName string, authors []string) string {
+	parts := []string{title, subtitle, seriesName}
+	parts = append(parts, authors...)
+	joined := strings.Join(parts, " ")
+	joined = strings.ToLower(joined)
+	return strings.Join(strings.Fields(joined), " ")
+}
+
+// dateChipText returns the single-line card chip describing the most
+// recent activity for a book, or "" when no chip should render.
+// Unread books and books with no dates return ""; templates gate on
+// {{with dateChipText …}} to omit the element entirely.
+//
+// Rules:
+//
+//	finished → "Finished <last finished date>"
+//	reading  → "Reading since <last started date>"
+//	paused   → "Paused since <last started date>"
+//	dnf      → "Stopped <last started date>"
+//	else     → ""
+//
+// Missing dates fall through to "" — the card still conveys state via
+// the existing status pill; the chip adds no extra noise.
+func dateChipText(status string, started, finished []string) string {
+	switch status {
+	case "finished":
+		if d := lastDate(finished); d != "" {
+			return "Finished " + d
+		}
+	case "reading":
+		if d := lastDate(started); d != "" {
+			return "Reading since " + d
+		}
+	case "paused":
+		if d := lastDate(started); d != "" {
+			return "Paused since " + d
+		}
+	case "dnf":
+		if d := lastDate(started); d != "" {
+			return "Stopped " + d
+		}
+	}
+	return ""
 }

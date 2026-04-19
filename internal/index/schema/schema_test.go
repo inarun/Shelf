@@ -27,13 +27,29 @@ func TestMigrate_FreshDB_AppliesAll(t *testing.T) {
 	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	// schema_migrations has version 1.
-	var v int
-	if err := db.QueryRow("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&v); err != nil {
+	// schema_migrations must contain exactly one row per embedded
+	// migration file, and the highest version must match the highest
+	// file present in migrations/.
+	want, err := listMigrations()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 1 {
-		t.Errorf("expected latest version 1, got %d", v)
+	if len(want) == 0 {
+		t.Fatalf("no migrations found on disk — listMigrations returned empty")
+	}
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != len(want) {
+		t.Errorf("applied migrations = %d, want %d", n, len(want))
+	}
+	var latest int
+	if err := db.QueryRow("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&latest); err != nil {
+		t.Fatal(err)
+	}
+	if latest != want[len(want)-1].version {
+		t.Errorf("latest applied = %d, want %d", latest, want[len(want)-1].version)
 	}
 	// All expected tables present.
 	for _, table := range []string{
@@ -58,15 +74,38 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
+	// Capture count after first pass; second pass must not add rows.
+	var before int
+	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
 	if err := Migrate(db); err != nil {
 		t.Fatalf("second migrate should be no-op: %v", err)
 	}
-	var n int
-	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&n); err != nil {
+	var after int
+	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&after); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Errorf("duplicate migration rows: %d", n)
+	if before != after {
+		t.Errorf("idempotence violated: %d → %d rows", before, after)
+	}
+}
+
+// TestMigrate_002_BookCategoriesCategoryIndex guards the 002 migration:
+// the index on book_categories.category_id must exist after Migrate so
+// future category filters don't fall to a table scan.
+func TestMigrate_002_BookCategoriesCategoryIndex(t *testing.T) {
+	db := openTestDB(t)
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	err := db.QueryRow(
+		"SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+		"idx_book_categories_category_id",
+	).Scan(&name)
+	if err != nil {
+		t.Fatalf("idx_book_categories_category_id missing: %v", err)
 	}
 }
 

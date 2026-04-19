@@ -71,11 +71,32 @@
 
         <h2>Reading timeline</h2>
         <section class="timeline">
+          {{if .Book.Timeline}}
+            <ol class="timeline-entries">
+              {{range .Book.Timeline}}
+                <li class="timeline-entry timeline-entry--{{emptyOr .State "historical"}}" aria-label="{{.Label}}">
+                  {{if eq .State "finished"}}
+                    {{if .Started}}<span class="timeline-verb">Started</span> <time datetime="{{.Started}}">{{formatDate .Started}}</time>, {{end}}<span class="timeline-verb">finished</span> <time datetime="{{.Finished}}">{{formatDate .Finished}}</time>
+                  {{else if eq .State "reading"}}
+                    <span class="timeline-verb">Reading since</span> <time datetime="{{.Started}}">{{formatDate .Started}}</time>
+                  {{else if eq .State "paused"}}
+                    <span class="timeline-verb">Paused since</span> <time datetime="{{.Started}}">{{formatDate .Started}}</time>
+                  {{else if eq .State "dnf"}}
+                    <span class="timeline-verb">Stopped</span> <time datetime="{{.Started}}">{{formatDate .Started}}</time>
+                  {{else}}
+                    {{if .Started}}<span class="timeline-verb">Started</span> <time datetime="{{.Started}}">{{formatDate .Started}}</time>{{end}}{{if and .Started .Finished}}, {{end}}{{if .Finished}}<span class="timeline-verb">finished</span> <time datetime="{{.Finished}}">{{formatDate .Finished}}</time>{{end}}
+                  {{end}}
+                </li>
+              {{end}}
+            </ol>
+          {{end}}
           {{if .Book.TimelineLines}}
-            <ul>
+            <h3 class="timeline-notes-heading">Timeline notes</h3>
+            <ul class="timeline-notes">
               {{range .Book.TimelineLines}}<li>{{.}}</li>{{end}}
             </ul>
-          {{else}}
+          {{end}}
+          {{if and (not .Book.Timeline) (not .Book.TimelineLines)}}
             <div class="empty-state">
               <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-timeline"/></svg>
               <p class="empty-state__title">No timeline entries yet</p>

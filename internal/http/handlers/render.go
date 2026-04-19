@@ -33,11 +33,19 @@ func (d *Dependencies) renderHTML(w http.ResponseWriter, r *http.Request, name s
 		)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("<!doctype html><title>500</title><h1>500 Internal Server Error</h1>"))
+		if _, werr := w.Write([]byte("<!doctype html><title>500</title><h1>500 Internal Server Error</h1>")); werr != nil {
+			d.Logger.Debug("render 500 write failed", "err", werr)
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(buf.Bytes())
+	if _, werr := w.Write(buf.Bytes()); werr != nil {
+		d.Logger.Debug("render body write failed",
+			"template", name,
+			"request_id", middleware.RequestIDFrom(r.Context()),
+			"err", werr,
+		)
+	}
 }
 
 // newPageCommon populates CSRFToken/RequestID/ActiveNav from the

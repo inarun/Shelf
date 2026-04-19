@@ -2,7 +2,7 @@
 
 **Authoritative spec for the Shelf project.** Load this file at the start of every Claude Code session. Every architectural decision, filename, schema, and rule in this document is binding. If a user request contradicts this document, raise the contradiction and ask before proceeding.
 
-Last updated: 2026-04-18 (Session 10 complete — v0.1.1 design arc closes: typography + motion system, SVG logo, §Design system captured inline)
+Last updated: 2026-04-18 (v0.1.2 Session 11 complete — polish + bugfix: structured reading-timeline rendering, library-card date chip, client-side library search, senior-dev bug/efficiency sweep. v0.2 / v0.2.1 / v0.3 sessions renumbered +1)
 
 ---
 
@@ -385,7 +385,7 @@ Adding a symbol: append a `<symbol>` to `_sprite.html`, use a 24×24 viewBox for
 - **No `.style.*` assignments in `app.js`.** Session 8 converted every one to a class toggle. `app.js` should contain zero occurrences of `.style.` — prefer `classList.add/remove` or data-attributes.
 - **Every form control labeled.** `<label for="id">` required on each `<input>`, `<select>`, `<textarea>`; `.sr-only` is fine for compact UIs. Enforced by `TestFormsUseExplicitLabelAssociation`.
 - **Every top-level page carries `<main id="main">`.** The skip-link target. Enforced by `TestSkipLinkOnEveryPage`.
-- **Service worker `CACHE_VERSION` bumps on every static-asset change** so returning clients install the new bundle. Session 7 → `shelf-v2`, Session 8 → `-v3`, Session 9 → `-v4`, Session 10 → `-v5`.
+- **Service worker `CACHE_VERSION` bumps on every static-asset change** so returning clients install the new bundle. Session 7 → `shelf-v2`, Session 8 → `-v3`, Session 9 → `-v4`, Session 10 → `-v5`, Session 11 → `-v6`.
 
 ### Contrast audit tooling
 
@@ -532,13 +532,91 @@ Session 10 (typography + motion system) — **complete as of 2026-04-18**:
 - Regression guards: `TestNavBrandUsesLogoMarkAndWordmark` (brand emits logo mark + wordmark span + `aria-label`), `TestSpriteHasIconLogoSymbol` (sprite defines `#icon-logo` at 24×24), `TestAppCSSSession10DesignSystem` in `internal/http/static/static_test.go` (checks typography tokens, tabular-nums rule, motion keyframes, nth-child stagger with `calc(var(--stagger-step) * N)`, `:active` scale, brand-mark/brand-wordmark selectors, reduced-motion kill-switch).
 - All four security lints clean; all tests green. v0.1.1 design arc closes here.
 
-### v0.2 — Audiobookshelf sync (future)
+### v0.1.2 — Polish + bugfix (complete 2026-04-18)
 
-Read-only sync of listening progress into Reading Timeline entries. Implements `providers/reading/audiobookshelf`. Data precedence per §Data Precedence.
+Session 11 — senior-dev bug/efficiency sweep plus two user-facing feature additions (reading dates in UI, client-side library search). Priority remains Security > Lightweight > Polish > Features; this point-release lands before v0.2's Audiobookshelf groundwork because the features consume plumbing already in place (`started_json`/`finished_json` columns + `StartedDates`/`FinishedDates` on `store.BookRow` shipped in v0.1 but weren't surfaced in templates).
 
-### v0.3 — Recommender (future)
+**Senior-dev sweep (bug + efficiency):**
+- **SQLite concurrency** — `internal/index/store/store.go` Open now sets `_pragma=busy_timeout(5000)&_txlock=immediate` and `SetMaxOpenConns(1)`. Forces writers to serialize at the Go pool layer and absorbs momentary lock contention, fixing the 8-reindex-error pattern seen during a concurrent Goodreads import vs. filesystem watcher. New regression test `TestUpsertBook_ConcurrentWriters` guards the behavior (20 parallel `UpsertBook` calls, expects zero `SQLITE_BUSY`).
+- **HTTP server timeouts** — `cmd/shelf/main.go` now sets `ReadTimeout: 60s` and `WriteTimeout: 120s` alongside the existing `ReadHeaderTimeout` / `IdleTimeout`. Values chosen with headroom for `/api/import/plan` + `/api/import/apply` on a typical full-library Goodreads CSV.
+- **N+1 in library list** — `Store.ListBooks` previously called `loadJoined` once per returned row (1+2N queries). Replaced with two new batch loaders `loadAuthorsBatch` / `loadCategoriesBatch` that take `[]int64{bookIDs…}` and emit one parameterized `IN (?,?…)` query each. Library page now issues exactly 3 SQL statements regardless of book count. Per-book `GetBookByFilename` keeps the original single-row `loadJoined` path.
+- **Watcher dropped-event visibility** — `internal/vault/watcher/watcher.go` `emit` now surfaces a `fmt.Errorf` on the `w.errs` channel when the 1-second consumer-send timeout fires (the drop itself remains — it's a deadlock-avoidance mechanism). `cmd/shelf/drainWatcher` already consumes `w.Errors()` and logs via `logger.Warn`, so slow consumers are now diagnosable. Added `Kind.String()` for human-readable log messages.
+- **Response-write error visibility** — `internal/http/handlers/render.go` (body + 500-fallback writes) and `errors.go` (error-page fallback + JSON encoder) log write failures at `Debug` level. No client-visible change; just debuggability when a client disconnects mid-response.
+- **Schema migration 002** — new `internal/index/schema/migrations/002_book_categories_category_index.sql` adds `idx_book_categories_category_id ON book_categories(category_id)`. The sibling author index has existed since 001; this closes the symmetry so v0.3's category-based filters don't fall to a table scan. `schema.Migrate` picks it up automatically (glob `migrations/*.sql`, sorted ascending); regression guard `TestMigrate_002_BookCategoriesCategoryIndex` asserts the index exists post-migrate. The two older "expected version 1" assertions in `schema_test.go` were generalized to "highest applied version matches the highest file present" so future migrations don't require test edits.
 
-Rule-based scorer in `recommender/rules`. Taste profile from the index. Series-completion prioritization, author affinity, shelf similarity, length/genre matching.
+**Feature — reading dates in the UI:**
+- **Structured reading timeline in `book_detail.html`.** New `BookDetailView.Timeline []TimelineEntry` field; `composeTimeline(started, finished, status)` pairs `StartedDates[i]` with `FinishedDates[i]` and pivots the trailing unfinished entry to `reading|paused|dnf` based on current `Status`. Template renders an `<ol class="timeline-entries">` with per-state verb text, `<time datetime="YYYY-MM-DD">` elements, and a composed `aria-label` on each `<li>`. The body-prose `TimelineLines` lives below under a smaller "Timeline notes" heading when present. The existing `#icon-empty-timeline` illustration only renders when *both* the structured entries and the body prose are empty.
+- **Card date chip on every `bookCard`.** New `dateChipText(status, started, finished)` template helper returns one of `"Finished YYYY-MM-DD"` / `"Reading since YYYY-MM-DD"` / `"Paused since YYYY-MM-DD"` / `"Stopped YYYY-MM-DD"`, or empty (for `unread` or missing dates). The partial renders via `{{with dateChipText …}}` so unread cards carry no chip. Styled via new `.book-card .date-chip` CSS with tabular numerics. Because `bookCard` is shared, the chip also appears on `series_detail` cards for free.
+- **Template helper additions.** `formatDate` (validates and passes through ISO date or returns ""), `lastDate` ([]string → last element or ""), `searchText` (lowercase-normalized haystack from title/subtitle/series/authors), `dateChipText` (as above). All four are pure primitive-typed helpers; the `templates` package stays a leaf with zero internal dependencies.
+
+**Feature — client-side library search:**
+- **Library filter bar restructured.** `library.html` gains a `role="search"` form with a new `<input id="library-search" type="search" name="q">` ahead of the status `<select>`, plus an `icon-search` glyph inside a `.search-input` group. The search input appears first in DOM order so the existing `/` keyboard shortcut — wired to the first `.filter-bar input` in `initShortcuts` — focuses it.
+- **`data-search` on every `.book-card`.** Template renders a lowercase haystack precomputed by `searchText(...)`; `initLibrarySearch()` in `app.js` filters via substring match, toggles the `hidden` attribute (zero `.style.*`, CSP-clean), updates an `aria-live="polite"` count region, and swaps in a dedicated `#search-empty` state (with inline clear button) when no cards match.
+- **Query round-trips.** `libraryFilter.Query` is seeded from `?q=` (server-echoed into the input `value`); server doesn't apply it against SQL — the field is a pure progressive-enhancement hook so URLs are shareable without paying the complexity cost of a LIKE-based search. `maxSearchQueryLen = 200` caps echoed input defensively.
+- **PWA cache bump.** `sw.js` `CACHE_VERSION` `shelf-v5 → shelf-v6` so returning clients install the new JS + templates.
+
+**Regression guards (added):**
+- `TestLibraryHasSearchInput` — search input precedes status filter; `role="search"` on form; `#search-empty` + `aria-live="polite"` regions present.
+- `TestBookCardHasDataSearchAttr` — cards carry `data-search`; helper emits lowercase normalized haystack.
+- `TestBookDetailRendersStructuredTimeline` — three paired entries with `<time datetime="…">` elements; final entry carries `timeline-entry--paused` class + composed `aria-label`; empty-state doesn't render when entries are present.
+- `TestCardCarriesDateChipForFinishedBook` — finished status + finished date emits chip; unread status emits no chip.
+- `TestFormatDate`, `TestLastDate`, `TestSearchText`, `TestDateChipText` — unit tests for the new helpers.
+- `TestComposeTimeline` — subtests for paused trail, reading-only, finished terminal, DNF terminal, nothing, and legacy gap in non-terminal position.
+- `TestMigrate_002_BookCategoriesCategoryIndex` — index presence post-migrate.
+
+All four security lints clean; `go vet`, `staticcheck`, and the full test suite green. No color-token or contrast changes; `cmd/a11y-check` unchanged.
+
+### v0.2 — Audiobookshelf sync (future, 3 sessions)
+
+> **2026-04-18:** Roadmap expanded from the original one-paragraph stub into a three-session cadence matching v0.1 / v0.1.1 cadence. Shape: read-only pull of listening progress → Reading Timeline entries via a manual "Sync from Audiobookshelf" action. Implements `providers/reading/audiobookshelf`. Data precedence per §Data precedence.
+
+**Non-goals for v0.2:** OAuth; automatic background sync; any writeback to Audiobookshelf; audiobook metadata enrichment from AB (cover/description stays with Open Library); auto-creation of vault notes for unmatched AB items (flagged only); multi-server support.
+
+- **Session 12 — Groundwork + Audiobookshelf client.** Fill `internal/domain/precedence` with a real resolver matching the §Data precedence ordering; migrate the Goodreads resolver to use it (pure refactor). Fix the Goodreads `ConflictDecision{Action:"accept"}` no-op at `internal/http/handlers/import_api.go` so user-confirmed borderline matches actually promote to `will_update` (wire format unchanged, as documented). Implement `internal/providers/reading/audiobookshelf/{client,auth,types}.go` mirroring the Open Library security posture (15s timeout, 5 MiB cap, JSON-only content-type allowlist, no cross-host redirects, API key never in errors/logs). Pin contract with `testdata/*.json` fixtures for `/api/me`, `/api/me/items-in-progress`, `/api/me/listening-sessions`. Add `[providers.audiobookshelf]` config section with `enabled`/`base_url`/`api_key`/`cache_ttl_minutes`; honored at runtime per the Open Library precedent (`enabled=false` ⇒ nil provider ⇒ 503 from future sync endpoints).
+- **Session 13 — Sync pipeline + timeline writer.** Fill `internal/domain/timeline` with `Entry` + `Merge` (external fills gaps; vault entries win on overlap; de-dup by `ExternalID` then `(Source, Start.Date())`). Implement `internal/providers/reading/audiobookshelf/{mapper,plan,apply}.go`: ASIN → ISBN → normalized title+author Levenshtein matching with the same three-band thresholds as Goodreads, Plan bucket shape (`will_update`, `conflicts`, `will_skip`, `unmatched`), Apply path that backs up via `internal/vault/backup` + atomic per-note rewrite + `index/sync.Apply`. Wire `POST /api/sync/audiobookshelf/plan` and `/apply` (503 when disabled). No UI yet.
+- **Session 14 — Sync UI + audio timeline badge.** New sprite symbol `icon-audio` (24×24, headphones, `currentColor`). New SSR page `/sync` mirroring the `/import` UX (config-status section → plan section → apply section with conflict decisions). Book-detail timeline renders `icon-audio` on entries with `Source == SourceAudiobookshelf`. `initSyncPage` in `app.js` (fetch + toast + optimistic disable-while-pending, zero `.style.*`). `sw.js` CACHE_VERSION bump `shelf-v6 → shelf-v7`. a11y: skip-link unchanged, button `aria-busy`, sr-only source label on the timeline badge. Regression guards: `TestSpriteHasIconAudioSymbol`, `TestSyncPageRendersWhenConfigured`, `TestSyncPageEmptyStateWhenDisabled`, `TestTimelineShowsAudioBadgeOnABEntries`, `TestSyncAPIReturns503WhenDisabled`.
+
+### v0.2.1 — Trial Review System (future, 2 sessions)
+
+> **2026-04-18:** New point-release inserted between v0.2 and v0.3. Replaces the legacy single-scalar `rating: N` frontmatter with a dimensioned five-axis "Trial System". Rationale: the v0.3 recommender benefits materially from per-axis ratings (enables the `AxisMatch` scorer) and cannot meaningfully exploit dimensioned ratings if the schema isn't in place first. Mirrors the v0.1.1 pattern of inserting a polish/infrastructure arc between feature milestones.
+
+**Shape.** Frontmatter is truth; a body `## Rating` section is Shelf-managed (dual-write — Shelf regenerates it from frontmatter on every write). Axes: **Emotional Impact, Characters, Plot, Dialogue/Prose, Cinematography/Worldbuilding** — integers, nominally 1–5 per axis but can be bumped higher for outliers. Overall = mean of the five axes, overridable by an explicit `overall:` field (lets `6/5`-style overall values exist without breaking the mean rule).
+
+```yaml
+rating:
+  trial_system:
+    emotional_impact: 5
+    characters: 5
+    plot: 5
+    dialogue_prose: 5
+    cinematography_worldbuilding: 5
+  overall: 6        # optional; omitted ⇒ Shelf computes mean of trial_system values
+```
+
+```markdown
+## Rating — ★ 6/5
+*Trial System*
+Emotional Impact: 5
+Characters: 5
+Plot: 5
+Dialogue/Prose: 5
+Cinematography/Worldbuilding: 5
+```
+
+**Non-goals for v0.2.1:** user-customizable axis names; per-axis weight sliders in the UI; multiple rating systems simultaneously (the "Trial System" naming suggests a future vocabulary — adding "Craft System" / "Vibes System" is post-v0.3); rating history (edits overwrite); half-star axis inputs (integers only per axis; `overall` can be fractional); bulk rating edit UI beyond the one-time migration.
+
+- **Session 15 — Trial System schema + widget + dual-write.** Extend `internal/vault/frontmatter` to parse/serialize both legacy scalar and new map rating shapes; writer emits only the map shape post-S15. `type Rating struct { TrialSystem map[string]int; Overall *float64 }` with `Effective()` + `IsDimensioned()` helpers. Extend `internal/vault/body` with a managed `## Rating` section — parser extracts axis values from `Key: int` lines; writer regenerates the block from frontmatter on every Shelf-authored write (user edits overwritten). Reader fallback: if frontmatter lacks `rating` but body has the block, sync body values into frontmatter on next save. Replace the single-star widget in `book_detail.html` with a `.rating-grid` — outer `<fieldset>` (preserving Session 9 pattern) containing five nested `<fieldset class="rating-axis">` rows, each with a visible legend + star row + a `+` button to bump above 5. "Overall: {effective}/5" computed display with `aria-live="polite"`; "Override overall" checkbox + number input (0–10). `PATCH /api/books/{filename}` accepts the new shape (validates axis key set). Book cards on library/series/recommendations render effective overall with star icons + new sprite symbol `icon-star-half` (catalogue grows to 13); `effective > 5` renders as a bumped-badge. Stats page adds a rating-distribution histogram. Goodreads CSV importer maps `My Rating` to `Rating{Overall: &csvRating}` with empty TrialSystem.
+- **Session 16 — Batch migration + index schema bump.** New package `internal/vault/migrate` mirroring `internal/vault/rename`'s shape (Plan + Apply, shared backup + atomic primitives). `BuildPlan` walks the vault, identifies scalar-rating notes, proposes map conversion (`Rating{Overall: &N, TrialSystem: {}}`). `Apply` snapshots vault, rewrites each note atomically (frontmatter + managed body block), re-indexes. Migration UI on `/sync` (or dedicated `/migrate`) shows pending migrations with a diff preview + confirm. Index schema bump: drop `rating INTEGER`, add `rating_overall REAL`, `rating_dimensions TEXT` (JSON), `rating_has_override BOOLEAN`. SQL data migration copies existing `rating` values. Binary-downgrade check refuses to start if SQLite `user_version` is newer than the binary expects. `sync.FullScan` and `sync.Apply` bridge to the new columns. `sw.js` CACHE_VERSION bump `shelf-v7 → shelf-v8`. Nav gains an optional "Pending migrations" badge when `BuildPlan()` is non-empty.
+
+### v0.3 — Rule-based recommender (future, 3 sessions)
+
+> **2026-04-18:** Roadmap expanded. Scope: given the user's existing library + reading history + dimensioned ratings (from v0.2.1), produce a scored list of candidate books (status in `{"", "unread", "paused"}`). Rule-based, deterministic, explainable. UI: minimal — `/recommendations` page with per-card "why this?" disclosure. No filters, no weight sliders, no saved lists.
+
+**Non-goals for v0.3:** external book discovery; collaborative filtering; user-customizable rule weights; saved reading lists; automated reshelving; UI filters or sorting controls; LLM-generated explanations (that's v0.5).
+
+- **Session 17 — Taste profile + series completion.** Fill `internal/domain/series`: `State` struct with name/total/owned/max-owned-index/gaps/complete, `Detect(books) []State`. Fill `internal/recommender/profile`: `Profile` with `TopAuthors`, `TopShelves`, `AxisMeans`/`AxisStdevs` (per-axis aggregates consuming S15's `rating_dimensions` JSON column), `LengthMean`/`LengthStdev`, `SeriesInProgress`, `RatingMean`. `Extract(store)` reads SQLite; rating weights use `rating_overall` (respects override); exponential half-life on recency (~1 year). Debug endpoint `GET /api/recommendations/profile` gated on new `[recommender] enabled = false` config default.
+- **Session 18 — Rule scorers + combined ranker (incl. AxisMatch).** Fill `internal/recommender/rules` with six scorers: `SeriesCompletion`, `AuthorAffinity`, `ShelfSimilarity` (Jaccard), `LengthMatch` (Gaussian), `GenreMatch`, and the new `AxisMatch` — for each axis the user rates highly on a given shelf, boost books on matching shelves (e.g., "You rate Plot highly on sci-fi shelves, mean 4.8"). Each scorer returns `Score{Value, Reason}` with user-facing reason text. Combined ranker: weighted sum with `DefaultWeights` (six entries, hardcoded; v0.5 LLM-tunes these and the axis-derived preference targets). `Rank(candidates, profile) []ScoredBook` with top-3 non-empty `Reasons`. `GET /api/recommendations` JSON endpoint. `AxisMatch` gracefully degrades when no dimensioned ratings exist (fresh post-migration user).
+- **Session 19 — Recommendations UI + why tooltip.** New SSR page `/recommendations` — book-card grid (reuses library card), per-card "Why?" disclosure button (`<button aria-expanded>` + `<div hidden>`; no focus trap, simpler than `#kbd-help`'s dialog). Empty state when library is too small or recommender disabled. Nav gains "Recommendations" entry, server-rendered gated on `recommender.enabled`. Keyboard shortcut `g r`, documented in `#kbd-help`. `sw.js` CACHE_VERSION bump `shelf-v8 → shelf-v9`. Regression guards: `TestRecommendationsPageRendersRanked`, `TestRecommendationsEmptyStateRendered`, `TestWhyPopoverDisclosure`, `TestKbdHelpListsRecommendationsShortcut`, `TestNavShowsRecommendationsWhenEnabled`/`Hides`.
 
 ### v0.4 — Kavita sync (future)
 
@@ -546,7 +624,7 @@ Same pattern as Audiobookshelf.
 
 ### v0.5 — LLM-enhanced recommender (future)
 
-Opt-in, bring-your-own-Anthropic-API-key. Lives in `recommender/llm`. Never called unless user explicitly triggers it. Configured in its own TOML section. Composes with the rule-based scorer, not replacing it. Sends review text and metadata only; never telemetry.
+Opt-in, bring-your-own-Anthropic-API-key. Lives in `recommender/llm`. Never called unless user explicitly triggers it. Configured in its own TOML section. Composes with the rule-based scorer, not replacing it — specifically, tunes the six scorer weights and axis-derived preference targets from v0.3 S18. Sends review text and metadata only; never telemetry.
 
 ### v0.6 — Hardcover metadata provider (future)
 

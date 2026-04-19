@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // BookRow is the flat row representation used by callers. Pointer-typed
@@ -390,11 +391,25 @@ LEFT JOIN series s ON s.id = b.series_id`
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: list books rows: %w", err)
 	}
-	// Load joined authors/categories per row. N+1 but simple; fine for
-	// v0.1 library size.
-	for i := range out {
-		if err := s.loadJoined(ctx, &out[i]); err != nil {
+	// Batch-load joined authors/categories across all returned rows to
+	// avoid the N+1 pattern the single-row loadJoined would produce here.
+	// Two queries total, regardless of len(out).
+	if len(out) > 0 {
+		ids := make([]int64, len(out))
+		for i := range out {
+			ids[i] = out[i].ID
+		}
+		authorsByID, err := s.loadAuthorsBatch(ctx, ids)
+		if err != nil {
 			return nil, err
+		}
+		categoriesByID, err := s.loadCategoriesBatch(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			out[i].Authors = authorsByID[out[i].ID]
+			out[i].Categories = categoriesByID[out[i].ID]
 		}
 	}
 	return out, nil
@@ -536,6 +551,87 @@ ORDER BY c.name ASC`, br.ID)
 	}
 	_ = categoryRows.Close()
 	return nil
+}
+
+// loadAuthorsBatch returns book_id → ordered authors for the given ids.
+// Issues a single query using IN (?, ?, …); empty ids short-circuits.
+// Callers are responsible for passing the collected ids from already-
+// scanned BookRows — the result map only includes keys for books that
+// have at least one author row.
+func (s *Store) loadAuthorsBatch(ctx context.Context, ids []int64) (map[int64][]string, error) {
+	out := map[int64][]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids)-1) + "?"
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	// #nosec G201 G202 -- `placeholders` is composed only of "?" / ","
+	// literals sized from len(ids); zero caller data flows into the
+	// query text. Every id lands in args[] and binds through the ?
+	// markers via QueryContext.
+	query := fmt.Sprintf(`
+SELECT ba.book_id, a.name FROM book_authors ba
+JOIN authors a ON a.id = ba.author_id
+WHERE ba.book_id IN (%s)
+ORDER BY ba.book_id, ba.position ASC`, placeholders)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: load authors batch: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var bookID int64
+		var name string
+		if err := rows.Scan(&bookID, &name); err != nil {
+			return nil, fmt.Errorf("store: scan author batch: %w", err)
+		}
+		out[bookID] = append(out[bookID], name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: authors batch rows: %w", err)
+	}
+	return out, nil
+}
+
+// loadCategoriesBatch is the sibling of loadAuthorsBatch for book_categories.
+func (s *Store) loadCategoriesBatch(ctx context.Context, ids []int64) (map[int64][]string, error) {
+	out := map[int64][]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids)-1) + "?"
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	// #nosec G201 G202 -- same rationale as loadAuthorsBatch:
+	// `placeholders` is "?" / "," literals only; ids bind through the ?
+	// markers via QueryContext's args slice.
+	query := fmt.Sprintf(`
+SELECT bc.book_id, c.name FROM book_categories bc
+JOIN categories c ON c.id = bc.category_id
+WHERE bc.book_id IN (%s)
+ORDER BY bc.book_id, c.name ASC`, placeholders)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: load categories batch: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var bookID int64
+		var name string
+		if err := rows.Scan(&bookID, &name); err != nil {
+			return nil, fmt.Errorf("store: scan category batch: %w", err)
+		}
+		out[bookID] = append(out[bookID], name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: categories batch rows: %w", err)
+	}
+	return out, nil
 }
 
 func nullableInt64(p *int64) any {

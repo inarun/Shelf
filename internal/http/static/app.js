@@ -761,6 +761,70 @@
     });
   }
 
+  // initLibrarySearch wires the client-side filter on /library. The
+  // server renders every book-card with a precomputed data-search="…"
+  // lowercase haystack (title + subtitle + series + authors); we just
+  // toggle visibility based on whether dataset.search includes the
+  // current query substring. O(N) per keystroke, which is fine at the
+  // library sizes we target (hundreds of books — sub-millisecond).
+  //
+  // State lives entirely in the DOM: `hidden` attribute on cards, a
+  // live-region count, and a dedicated empty-state when the filter
+  // returns zero matches. No .style.* (CSP).
+  function initLibrarySearch() {
+    const input = document.getElementById("library-search");
+    const grid = document.getElementById("book-grid");
+    if (!input || !grid) return;
+
+    const cards = grid.querySelectorAll(".book-card");
+    if (cards.length === 0) return;
+
+    const count = document.getElementById("search-count");
+    const countNum = document.getElementById("search-count-num");
+    const countPlural = document.getElementById("search-count-plural");
+    const empty = document.getElementById("search-empty");
+    const emptyQ = document.getElementById("search-empty-q");
+    const clearBtn = document.getElementById("search-clear-btn");
+
+    function apply() {
+      const q = input.value.trim().toLowerCase();
+      let visible = 0;
+      cards.forEach((card) => {
+        const hay = card.dataset.search || "";
+        const match = q === "" || hay.includes(q);
+        card.hidden = !match;
+        if (match) visible += 1;
+      });
+      if (q === "") {
+        if (count) count.hidden = true;
+        if (empty) empty.hidden = true;
+      } else {
+        if (count) {
+          count.hidden = false;
+          if (countNum) countNum.textContent = String(visible);
+          if (countPlural) countPlural.textContent = visible === 1 ? "" : "s";
+        }
+        if (empty) {
+          empty.hidden = visible !== 0;
+          if (visible === 0 && emptyQ) emptyQ.textContent = q;
+        }
+      }
+    }
+
+    input.addEventListener("input", apply);
+    if (clearBtn) {
+      clearBtn.addEventListener("click", () => {
+        input.value = "";
+        input.focus();
+        apply();
+      });
+    }
+
+    // Respect a server-seeded ?q= on first render: apply the filter once
+    // so the count + empty-state match the initial input.
+    if (input.value.trim() !== "") apply();
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-rating-widget]").forEach(initRating);
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
@@ -768,6 +832,7 @@
     initImport();
     initAddPage();
     initCoverControls();
+    initLibrarySearch();
     initShortcuts();
     initBarAnimation();
     registerServiceWorker();

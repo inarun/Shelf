@@ -11,7 +11,13 @@
     <h1>Library</h1>
     <p class="muted">{{len .Books}} book{{pluralS (len .Books)}}{{if .Filter.Status}} — filtered by status: <code>{{.Filter.Status}}</code>{{end}}</p>
 
-    <form class="filter-bar" method="get" action="/library">
+    <form class="filter-bar" method="get" action="/library" role="search">
+      <label for="library-search">Search</label>
+      <span class="search-input">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-search"/></svg>
+        <input id="library-search" type="search" name="q" value="{{.Filter.Query}}"
+               placeholder="Title, author, or series" autocomplete="off" spellcheck="false">
+      </span>
       <label for="status-filter">Status</label>
       <select id="status-filter" name="status">
         <option value="" {{if eq .Filter.Status ""}}selected{{end}}>all</option>
@@ -22,12 +28,21 @@
         <option value="dnf"      {{if eq .Filter.Status "dnf"}}selected{{end}}>dnf</option>
       </select>
       <button type="submit" class="primary">Filter</button>
-      {{if .Filter.Status}}<a href="/library">Clear</a>{{end}}
+      {{if or .Filter.Status .Filter.Query}}<a href="/library">Clear</a>{{end}}
     </form>
 
+    <p id="search-count" class="search-count" aria-live="polite" hidden>
+      <span id="search-count-num">0</span> book<span id="search-count-plural">s</span> match
+    </p>
+
     {{if .Books}}
-      <div class="book-grid">
+      <div class="book-grid" id="book-grid">
         {{range .Books}}{{template "bookCard" .}}{{end}}
+      </div>
+      <div class="empty-state" id="search-empty" hidden>
+        <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-shelf"/></svg>
+        <p class="empty-state__title">No books match &ldquo;<span id="search-empty-q"></span>&rdquo;</p>
+        <p class="empty-state__body">Try a shorter query or <button type="button" class="linklike" id="search-clear-btn">clear the search</button>.</p>
       </div>
     {{else}}
       <div class="empty-state">

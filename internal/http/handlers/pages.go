@@ -25,11 +25,19 @@ type LibraryViewData struct {
 
 type libraryFilter struct {
 	Status string
+	Query  string
 }
 
+// maxSearchQueryLen caps the ?q= value we round-trip into the rendered
+// input. The filter is client-side only, so this is purely a
+// defense-in-depth limit against pathological URL lengths; typical
+// searches are a few characters.
+const maxSearchQueryLen = 200
+
 // LibraryView renders /library. Supports ?status=reading|finished|...
-// filter; empty means all. Other filter dimensions (series, author) are
-// deferred to Session 6 polish.
+// and ?q= filters. Status is applied server-side via store.Filter; the
+// query text is echoed back into the search input and used by the
+// client-side filter in app.js (no server-side text search yet).
 func (d *Dependencies) LibraryView(w http.ResponseWriter, r *http.Request) {
 	fStatus := r.URL.Query().Get("status")
 	filter := store.Filter{Status: fStatus}
@@ -42,6 +50,11 @@ func (d *Dependencies) LibraryView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	fQuery := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(fQuery) > maxSearchQueryLen {
+		fQuery = fQuery[:maxSearchQueryLen]
+	}
+
 	books, err := d.Store.ListBooks(r.Context(), filter)
 	if err != nil {
 		d.Logger.Error("library list", "err", err)
@@ -52,7 +65,7 @@ func (d *Dependencies) LibraryView(w http.ResponseWriter, r *http.Request) {
 	d.renderHTML(w, r, "library", LibraryViewData{
 		PageCommon: d.newPageCommon(r, "library"),
 		Books:      books,
-		Filter:     libraryFilter{Status: fStatus},
+		Filter:     libraryFilter{Status: fStatus, Query: fQuery},
 	})
 }
 
@@ -71,6 +84,23 @@ type BookDetailView struct {
 	store.BookRow
 	Review        string
 	TimelineLines []string
+	Timeline      []TimelineEntry
+}
+
+// TimelineEntry is one row of the structured reading-timeline block on
+// the book-detail page. Built from the paired StartedDates/FinishedDates
+// frontmatter arrays plus the current Status for the in-progress pivot.
+// All date fields are ISO YYYY-MM-DD strings ("" when absent).
+type TimelineEntry struct {
+	Started  string
+	Finished string
+	// State is one of "finished", "reading", "paused", "dnf", or "".
+	// Empty means a historical entry whose status cannot be inferred
+	// (e.g. a legacy unfinished read with no terminal status).
+	State string
+	// Label is the pre-composed screen-reader text summarizing the
+	// entry; the template uses it as the <li>'s aria-label.
+	Label string
 }
 
 // BookDetail renders /books/{filename}.
@@ -125,7 +155,73 @@ func (d *Dependencies) buildBookDetailView(ctx context.Context, row *store.BookR
 		BookRow:       *row,
 		Review:        n.Body.Notes(),
 		TimelineLines: extractTimelineLines(n.Body),
+		Timeline:      composeTimeline(row.StartedDates, row.FinishedDates, row.Status),
 	}, nil
+}
+
+// composeTimeline pairs started[i] with finished[i] into TimelineEntry
+// rows. For the final pair, a missing finish date is interpreted using
+// the current Status (reading|paused|dnf) so the UI reflects the active
+// state rather than a bare "started on X". Entries earlier in the
+// sequence that are missing a finish are treated as legacy gaps and
+// carry an empty State.
+//
+// The function is pure and deterministic for unit testing; it does not
+// depend on Dependencies or the filesystem.
+func composeTimeline(started, finished []string, status string) []TimelineEntry {
+	n := len(started)
+	if len(finished) > n {
+		n = len(finished)
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make([]TimelineEntry, 0, n)
+	for i := 0; i < n; i++ {
+		var e TimelineEntry
+		if i < len(started) {
+			e.Started = started[i]
+		}
+		if i < len(finished) {
+			e.Finished = finished[i]
+		}
+		switch {
+		case e.Finished != "":
+			e.State = "finished"
+		case i == n-1 && (status == "reading" || status == "paused" || status == "dnf"):
+			e.State = status
+		}
+		e.Label = composeTimelineLabel(e)
+		out = append(out, e)
+	}
+	return out
+}
+
+// composeTimelineLabel builds the a11y-facing aria-label for a single
+// timeline entry, covering the four state buckets plus the fallback.
+// Kept plain-text (no punctuation cues like "·") so screen readers
+// produce natural prose.
+func composeTimelineLabel(e TimelineEntry) string {
+	switch e.State {
+	case "finished":
+		if e.Started != "" {
+			return "Started " + e.Started + ", finished " + e.Finished
+		}
+		return "Finished " + e.Finished
+	case "reading":
+		return "Reading since " + e.Started
+	case "paused":
+		return "Paused, last started " + e.Started
+	case "dnf":
+		return "Stopped reading, last started " + e.Started
+	}
+	if e.Started != "" && e.Finished == "" {
+		return "Started " + e.Started + ", no finish date recorded"
+	}
+	if e.Started == "" && e.Finished != "" {
+		return "Finished " + e.Finished + ", no start date recorded"
+	}
+	return ""
 }
 
 func extractTimelineLines(b *body.Body) []string {
