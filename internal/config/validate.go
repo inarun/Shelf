@@ -130,6 +130,18 @@ func validateProviders(c *Config, ve *ValidationError) {
 		ve.pushf("providers.openlibrary.cache_ttl_days %d must be >= 1 when enabled",
 			c.Providers.OpenLibrary.CacheTTLDays)
 	}
+	if c.Providers.Audiobookshelf.Enabled {
+		if strings.TrimSpace(c.Providers.Audiobookshelf.BaseURL) == "" {
+			ve.push("providers.audiobookshelf.base_url is required when enabled")
+		}
+		if strings.TrimSpace(c.Providers.Audiobookshelf.APIKey) == "" {
+			ve.push("providers.audiobookshelf.api_key is required when enabled")
+		}
+		if c.Providers.Audiobookshelf.CacheTTLMinutes < 1 {
+			ve.pushf("providers.audiobookshelf.cache_ttl_minutes %d must be >= 1 when enabled",
+				c.Providers.Audiobookshelf.CacheTTLMinutes)
+		}
+	}
 }
 
 func probeWritable(dir string) error {

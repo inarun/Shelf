@@ -35,7 +35,8 @@ type ServerConfig struct {
 
 // ProvidersConfig aggregates per-provider settings.
 type ProvidersConfig struct {
-	OpenLibrary OpenLibraryConfig `toml:"openlibrary"`
+	OpenLibrary    OpenLibraryConfig    `toml:"openlibrary"`
+	Audiobookshelf AudiobookshelfConfig `toml:"audiobookshelf"`
 }
 
 // OpenLibraryConfig controls the Open Library metadata provider.
@@ -43,6 +44,17 @@ type ProvidersConfig struct {
 type OpenLibraryConfig struct {
 	Enabled      bool `toml:"enabled"`
 	CacheTTLDays int  `toml:"cache_ttl_days"`
+}
+
+// AudiobookshelfConfig controls the Audiobookshelf sync provider.
+// Enabled is false by default; the user opts in explicitly. BaseURL is
+// the self-hosted AB server (http or https). APIKey is bearer-style
+// and must never be checked into source control.
+type AudiobookshelfConfig struct {
+	Enabled         bool   `toml:"enabled"`
+	BaseURL         string `toml:"base_url"`
+	APIKey          string `toml:"api_key"`
+	CacheTTLMinutes int    `toml:"cache_ttl_minutes"`
 }
 
 // BooksAbsolutePath joins Vault.Path and Vault.BooksFolder into an absolute

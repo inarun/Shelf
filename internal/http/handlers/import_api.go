@@ -15,12 +15,8 @@ import (
 
 // ConflictDecision is a single entry in the `decisions` form field
 // submitted alongside the CSV on Apply. "accept" asks the importer to
-// treat a flagged conflict as an update; "skip" leaves it unwritten.
-//
-// v0.1 note: the goodreads resolver does not yet have a promote-
-// borderline-match mode, so "accept" is currently treated as "skip".
-// The wire format is stable — future sessions can add promotion
-// without an API change.
+// promote a flagged conflict to an update; "skip" leaves it in the
+// conflict bucket. Missing decisions default to skip.
 type ConflictDecision struct {
 	Filename string `json:"filename"`
 	Action   string `json:"action"`
@@ -63,9 +59,8 @@ func (d *Dependencies) PlanImport(w http.ResponseWriter, r *http.Request) {
 
 // ApplyImport handles POST /api/import/apply. Stateless: the client
 // re-submits the same CSV alongside `decisions`. The handler re-builds
-// the plan, filters conflict entries per decisions (v0.1: all conflicts
-// are effectively skipped — see ConflictDecision doc), and runs
-// goodreads.Apply which snapshots the Books folder first.
+// the plan, promotes accepted conflicts via goodreads.ApplyDecisions,
+// then runs goodreads.Apply which snapshots the Books folder first.
 func (d *Dependencies) ApplyImport(w http.ResponseWriter, r *http.Request) {
 	records, err := d.parseCSVFromMultipart(w, r)
 	if err != nil {
@@ -78,7 +73,6 @@ func (d *Dependencies) ApplyImport(w http.ResponseWriter, r *http.Request) {
 		d.writeJSONError(w, r, http.StatusBadRequest, "invalid", err.Error())
 		return
 	}
-	_ = decisions // acknowledged, logged below; not consumed in v0.1.
 
 	resolver, err := goodreads.NewResolver(r.Context(), d.Store)
 	if err != nil {
@@ -88,6 +82,24 @@ func (d *Dependencies) ApplyImport(w http.ResponseWriter, r *http.Request) {
 	plan, err := goodreads.BuildPlan(r.Context(), records, resolver, d.BooksAbs, time.Now().UTC())
 	if err != nil {
 		d.writeJSONError(w, r, http.StatusInternalServerError, "server", "plan build failed")
+		return
+	}
+
+	// Promote user-accepted conflicts to WillUpdate (or WillSkip if no
+	// gaps remain); skip decisions leave conflicts untouched.
+	goodreadsDecisions := make([]goodreads.Decision, 0, len(decisions))
+	for _, gd := range decisions {
+		goodreadsDecisions = append(goodreadsDecisions, goodreads.Decision{
+			Filename: gd.Filename,
+			Action:   gd.Action,
+		})
+	}
+	if err := goodreads.ApplyDecisions(plan, goodreadsDecisions, d.BooksAbs); err != nil {
+		d.Logger.Error("apply decisions",
+			"request_id", middleware.RequestIDFrom(r.Context()),
+			"err", err,
+		)
+		d.writeJSONError(w, r, http.StatusBadRequest, "invalid", "apply decisions: "+err.Error())
 		return
 	}
 

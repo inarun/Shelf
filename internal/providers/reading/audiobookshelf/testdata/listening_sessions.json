@@ -1,0 +1,30 @@
+{
+  "total": 2,
+  "numPages": 1,
+  "itemsPerPage": 10,
+  "currentPage": 0,
+  "sessions": [
+    {
+      "id": "sess_hyperion_a",
+      "userId": "7f4d5b2e-1111-4a00-9b00-000000000000",
+      "libraryItemId": "li_hyperion_01",
+      "displayTitle": "Hyperion",
+      "displayAuthor": "Dan Simmons",
+      "duration": 17280.0,
+      "timeListening": 3600.25,
+      "startedAt": 1712635200000,
+      "updatedAt": 1712638800250
+    },
+    {
+      "id": "sess_hyperion_b",
+      "userId": "7f4d5b2e-1111-4a00-9b00-000000000000",
+      "libraryItemId": "li_hyperion_01",
+      "displayTitle": "Hyperion",
+      "displayAuthor": "Dan Simmons",
+      "duration": 17280.0,
+      "timeListening": 1800.0,
+      "startedAt": 1712722000000,
+      "updatedAt": 1712723800000
+    }
+  ]
+}

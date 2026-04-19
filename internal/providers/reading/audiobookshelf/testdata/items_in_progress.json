@@ -1,0 +1,36 @@
+{
+  "libraryItems": [
+    {
+      "id": "li_hyperion_01",
+      "libraryId": "lib_audiobooks",
+      "progress": 0.42,
+      "currentTime": 7200.5,
+      "isFinished": false,
+      "lastUpdate": 1712640000000,
+      "media": {
+        "metadata": {
+          "title": "Hyperion",
+          "authorName": "Dan Simmons",
+          "asin": "B003GAN4HE",
+          "isbn": "9780553283686"
+        }
+      }
+    },
+    {
+      "id": "li_phm_02",
+      "libraryId": "lib_audiobooks",
+      "progress": 1.0,
+      "currentTime": 58200.0,
+      "isFinished": true,
+      "lastUpdate": 1712500000000,
+      "media": {
+        "metadata": {
+          "title": "Project Hail Mary",
+          "authorName": "Andy Weir",
+          "asin": "",
+          "isbn": "9780593135204"
+        }
+      }
+    }
+  ]
+}

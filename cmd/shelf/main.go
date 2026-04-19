@@ -35,6 +35,7 @@ import (
 	"github.com/inarun/Shelf/internal/platform/singleton"
 	"github.com/inarun/Shelf/internal/providers/metadata"
 	"github.com/inarun/Shelf/internal/providers/metadata/openlibrary"
+	"github.com/inarun/Shelf/internal/providers/reading/audiobookshelf"
 	"github.com/inarun/Shelf/internal/tray"
 	"github.com/inarun/Shelf/internal/vault/watcher"
 )
@@ -134,6 +135,29 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 	} else {
 		logger.Info("openlibrary provider disabled via config; add-book flow unavailable")
 	}
+
+	// Audiobookshelf sync provider. Gated on providers.audiobookshelf.enabled
+	// with the same posture — nil client ⇒ future /api/sync/audiobookshelf/*
+	// endpoints return 503. Session 12 constructs the client; Session 13/14
+	// wire the mapper and UI.
+	var abClient *audiobookshelf.Client
+	if cfg.Providers.Audiobookshelf.Enabled {
+		c, err := audiobookshelf.New(audiobookshelf.Credentials{
+			BaseURL: cfg.Providers.Audiobookshelf.BaseURL,
+			APIKey:  cfg.Providers.Audiobookshelf.APIKey,
+		})
+		if err != nil {
+			return fmt.Errorf("audiobookshelf client init: %w", err)
+		}
+		abClient = c
+		logger.Info("audiobookshelf provider configured",
+			"base_url", cfg.Providers.Audiobookshelf.BaseURL,
+			"cache_ttl_minutes", cfg.Providers.Audiobookshelf.CacheTTLMinutes,
+		)
+	} else {
+		logger.Info("audiobookshelf provider disabled via config; sync unavailable")
+	}
+	_ = abClient // Session 12: client is constructed but no handler consumes it yet.
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

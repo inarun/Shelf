@@ -33,3 +33,17 @@ port = 7744
 # to opt back out.
 enabled        = true
 cache_ttl_days = 30
+
+[providers.audiobookshelf]
+# Explicit opt-in to outbound sync from a self-hosted Audiobookshelf
+# server (SKILL.md §Core Invariant #8 — no phone-home by default).
+# When `enabled = false`, Shelf makes no outbound connections to AB and
+# future /api/sync/audiobookshelf/* endpoints return 503. Shelf still
+# runs fully without AB.
+#
+# Security: api_key is bearer-style and MUST NOT be checked into source
+# control. This file ships as an example only.
+enabled           = false
+base_url          = "http://localhost:13378"
+api_key           = ""
+cache_ttl_minutes = 15

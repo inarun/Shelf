@@ -65,6 +65,9 @@ func applyDefaults(c *Config) error {
 	if c.Providers.OpenLibrary.CacheTTLDays == 0 {
 		c.Providers.OpenLibrary.CacheTTLDays = 30
 	}
+	if c.Providers.Audiobookshelf.CacheTTLMinutes == 0 {
+		c.Providers.Audiobookshelf.CacheTTLMinutes = 15
+	}
 	if c.Data.Directory == "" {
 		binDir, err := BinaryDir()
 		if err != nil {

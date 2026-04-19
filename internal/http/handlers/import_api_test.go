@@ -146,6 +146,75 @@ func TestApplyImport_RejectsInvalidDecisions(t *testing.T) {
 	}
 }
 
+// conflictCSV matches the seeded Hyperion note by title but with a
+// different author surname, triggering NeedsUserDecision=true per
+// goodreads.Match's "title fuzzy match but authors differ" branch. The
+// CSV also carries an ISBN13 so that an accepted conflict has at least
+// one gap to fill on the vault note (which lacks an ISBN).
+const conflictCSV = `Book Id,Title,Author,ISBN,ISBN13,My Rating,Exclusive Shelf,Date Read,Date Added,My Review,Publisher,Year Published,Number of Pages,Bookshelves
+1,"Hyperion","Ghost Writer","","=""9780553283686""",0,read,,2024/12/15,,"Bantam",1989,482,""
+`
+
+func TestApplyImport_AcceptPromotesConflict(t *testing.T) {
+	d, _ := seedDeps(t)
+	req := newMultipartApplyRequest(t, "/api/import/apply", conflictCSV,
+		`[{"filename":"Hyperion by Dan Simmons.md","action":"accept"}]`)
+	rec := httptest.NewRecorder()
+	d.ApplyImport(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var report struct {
+		Created []string `json:"created"`
+		Updated []string `json:"updated"`
+		Skipped []string `json:"skipped"`
+		Errors  []any    `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("parse report: %v body=%s", err, rec.Body.String())
+	}
+	// Pre-fix: the accept decision was dropped and the conflict was not
+	// applied — Updated would be empty. Post-fix: the filename appears
+	// in Updated because the vault's missing ISBN gets filled.
+	var foundUpdated bool
+	for _, f := range report.Updated {
+		if f == "Hyperion by Dan Simmons.md" {
+			foundUpdated = true
+		}
+	}
+	if !foundUpdated {
+		t.Errorf("expected Hyperion in Updated after accept; got report=%+v", report)
+	}
+	if len(report.Errors) != 0 {
+		t.Errorf("expected no errors; got %+v", report.Errors)
+	}
+}
+
+func TestApplyImport_SkipDecisionLeavesConflictUnapplied(t *testing.T) {
+	d, _ := seedDeps(t)
+	req := newMultipartApplyRequest(t, "/api/import/apply", conflictCSV,
+		`[{"filename":"Hyperion by Dan Simmons.md","action":"skip"}]`)
+	rec := httptest.NewRecorder()
+	d.ApplyImport(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var report struct {
+		Created []string `json:"created"`
+		Updated []string `json:"updated"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("parse report: %v body=%s", err, rec.Body.String())
+	}
+	for _, f := range report.Updated {
+		if f == "Hyperion by Dan Simmons.md" {
+			t.Errorf("skip must not promote to update; report=%+v", report)
+		}
+	}
+}
+
 func TestParseDecisionsEmpty(t *testing.T) {
 	got, err := parseDecisions("")
 	if err != nil {
