@@ -14,8 +14,10 @@ const (
 	// authoritative.
 	KindUnknown Kind = iota
 	// KindH1 covers the leading H1 region: the `# Title` line, any
-	// optional Rating line, and any prose before the first ##-section.
+	// optional Rating line (legacy, pre-v0.2.1), and any prose before
+	// the first ##-section.
 	KindH1
+	KindRating   // "## Rating — ★ N/5" (v0.2.1+; managed, regenerated from frontmatter)
 	KindKeyIdeas // "## Key Ideas / Takeaways"
 	KindNotes    // "## Notes"
 	KindQuotes   // "## Quotes & Highlights"
@@ -47,24 +49,27 @@ func canonicalHeading(k Kind) string {
 }
 
 // canonicalOrder returns the sort order used by EnsureSection when
-// inserting a recognized section. H1 is first; unknowns stay wherever
-// they were.
+// inserting a recognized section. H1 is first, Rating (v0.2.1) second
+// so the scored summary sits above user-authored content; unknowns stay
+// wherever they were.
 func canonicalOrder(k Kind) int {
 	switch k {
 	case KindH1:
 		return 0
-	case KindKeyIdeas:
+	case KindRating:
 		return 1
-	case KindNotes:
+	case KindKeyIdeas:
 		return 2
-	case KindQuotes:
+	case KindNotes:
 		return 3
-	case KindActions:
+	case KindQuotes:
 		return 4
-	case KindRelated:
+	case KindActions:
 		return 5
-	case KindTimeline:
+	case KindRelated:
 		return 6
+	case KindTimeline:
+		return 7
 	default:
 		return 99
 	}
@@ -125,4 +130,14 @@ type TimelineEvent struct {
 	Date time.Time
 	Text string
 	Raw  []byte // full original line, trailing newline included
+}
+
+// RatingParsed holds the axis values extracted from a `## Rating`
+// section. Values keys are the canonical snake_case RatingAxes
+// identifiers (e.g. "emotional_impact"). OverrideOverall is stamped
+// only when the block was (re)generated from a frontmatter.Rating with
+// an explicit Overall; plain parse-from-disk leaves it nil.
+type RatingParsed struct {
+	Values          map[string]int
+	OverrideOverall *float64
 }

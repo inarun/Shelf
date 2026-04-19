@@ -632,30 +632,51 @@ textarea { resize: vertical; }
 .book-detail dt { color: var(--muted); }
 .book-detail dd { margin: 0; color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
 
-/* ===== Rating widget — star icon buttons =====
-   A <fieldset> with an sr-only <legend> groups the five star buttons so
-   screen readers announce "Star rating" before the radio-like buttons.
-   The <h2>Rating</h2> above stays so the page heading outline is intact.
-   Color is driven by currentColor so a single CSS rule maps aria-pressed /
-   hover to the visual state without swapping icons: unrated =
-   var(--border-strong) (outlined-looking fill), hovered or pressed =
-   var(--star). Fieldset default chrome (border, padding, margin, min-width)
-   is neutralized so the widget lays out like any other flex row. */
-.rating-widget {
-  display: flex;
-  gap: var(--space-1);
-  align-items: center;
+/* ===== Rating grid — five Trial-System axes + override (Session 15) =====
+   The outer <fieldset class="rating-grid"> preserves the Session 9
+   fieldset-grouping pattern with an sr-only legend. Each inner axis
+   fieldset shows a visible legend + the star row + a "+" bump button
+   for pushing values above 5. Colors reuse the --star hover/pressed
+   palette from the original widget so muscle memory transfers.
+   No inline styles anywhere — CSP-clean. */
+.rating-grid {
+  display: grid;
+  gap: var(--space-3);
   margin: var(--space-1) 0 0 0;
   padding: 0;
   border: 0;
   min-width: 0;
 }
 
-.rating-widget button.rating-star {
+.rating-axis {
+  display: grid;
+  grid-template-columns: minmax(11rem, 16rem) 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.rating-axis > legend {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--fg);
+  padding: 0;
+}
+
+.rating-axis-stars {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rating-star,
+.rating-bump {
   background: transparent;
   border: 1px solid transparent;
-  /* Unfilled star uses --muted for WCAG 2.2 AA non-text contrast
-     against --surface (book cards / detail) and --bg alike. */
   color: var(--muted);
   border-radius: var(--radius-sm);
   padding: var(--space-1);
@@ -666,26 +687,64 @@ textarea { resize: vertical; }
     transform var(--motion-fast) var(--ease-out);
 }
 
-.rating-widget button.rating-star .icon-star {
+.rating-star .icon-star,
+.rating-bump .icon {
   width: 1.5rem;
   height: 1.5rem;
 }
 
-.rating-widget button.rating-star:hover:not(:disabled) {
+.rating-star:hover:not(:disabled),
+.rating-bump:hover:not(:disabled) {
   color: var(--star);
   background: color-mix(in srgb, var(--star) 10%, transparent);
 }
 
-.rating-widget button.rating-star:active:not(:disabled) {
+.rating-star:active:not(:disabled),
+.rating-bump:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.rating-widget button.rating-star[aria-pressed="true"] {
+.rating-star[aria-pressed="true"] {
   color: var(--star);
 }
 
-.rating-widget button.rating-star[data-busy="true"]::before {
-  display: none;
+.rating-overall {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+
+.rating-overall output[data-overall-output] {
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.rating-override-toggle,
+.rating-override-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--fg-subtle);
+  font-size: 0.9rem;
+}
+
+.rating-override-value input[type="number"] {
+  width: 5rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 0.9rem;
+}
+
+.rating-override-value input[type="number"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* ===== Review form ===== */

@@ -3,11 +3,14 @@ package handlers
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/inarun/Shelf/internal/index/store"
 	"github.com/inarun/Shelf/internal/vault/body"
+	"github.com/inarun/Shelf/internal/vault/frontmatter"
 	"github.com/inarun/Shelf/internal/vault/note"
 )
 
@@ -72,16 +75,41 @@ func (d *Dependencies) LibraryView(w http.ResponseWriter, r *http.Request) {
 // BookDetailData is the template data for book_detail.html.
 type BookDetailData struct {
 	PageCommon
-	Book        BookDetailView
-	Warnings    []string
-	RatingRange []int
+	Book           BookDetailView
+	Warnings       []string
+	RatingAxes     []RatingAxisView
+	OverallDisplay string
+	OverrideValue  string
+}
+
+// RatingAxisView is the per-axis row used by the book-detail rating
+// grid. Stars expands to 1..5, or 1..max(5, SelectedValue) so bumped
+// ratings render every filled star (the UI lets the user grow this
+// further via a "+" button; see app.js).
+type RatingAxisView struct {
+	Key           string
+	Label         string
+	Stars         []int
+	SelectedValue int
+}
+
+// IsSelected reports whether star `i` should render as pressed given the
+// axis's SelectedValue. Template helper for aria-pressed bindings.
+func (a RatingAxisView) IsSelected(i int) bool {
+	return a.SelectedValue > 0 && i <= a.SelectedValue
 }
 
 // BookDetailView merges the store row with the disk-only fields (review
 // text + timeline lines). Embedding promotes all BookRow fields so
-// templates can write {{.Book.Title}}, {{.Book.Rating}}, etc.
+// templates can write {{.Book.Title}}, etc. The `Rating` field here
+// SHADOWS BookRow.Rating so {{.Book.Rating}} on the book-detail page
+// carries the full *frontmatter.Rating struct (with TrialSystem axis
+// values + optional Overall) rather than the rounded-int scalar stored
+// in SQLite. Library/series card templates continue to read BookRow.Rating
+// through their own *store.BookRow values.
 type BookDetailView struct {
 	store.BookRow
+	Rating        *frontmatter.Rating
 	Review        string
 	TimelineLines []string
 	Timeline      []TimelineEntry
@@ -136,12 +164,59 @@ func (d *Dependencies) BookDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	axes, overallDisplay, overrideValue := buildRatingAxisViews(view.Rating)
 	d.renderHTML(w, r, "book_detail", BookDetailData{
-		PageCommon:  d.newPageCommon(r, "library"),
-		Book:        view,
-		Warnings:    row.Warnings,
-		RatingRange: []int{1, 2, 3, 4, 5},
+		PageCommon:     d.newPageCommon(r, "library"),
+		Book:           view,
+		Warnings:       row.Warnings,
+		RatingAxes:     axes,
+		OverallDisplay: overallDisplay,
+		OverrideValue:  overrideValue,
 	})
+}
+
+// buildRatingAxisViews computes the per-axis template data plus the
+// pre-formatted overall/override display strings. Rating may be nil —
+// that's the unrated case, the axes carry zero SelectedValue and the
+// overall renders as "—".
+func buildRatingAxisViews(r *frontmatter.Rating) ([]RatingAxisView, string, string) {
+	axes := make([]RatingAxisView, 0, len(frontmatter.RatingAxes))
+	for _, key := range frontmatter.RatingAxes {
+		sel := 0
+		if r != nil {
+			sel = r.TrialSystem[key]
+		}
+		stars := []int{1, 2, 3, 4, 5}
+		for n := 6; n <= sel; n++ {
+			stars = append(stars, n)
+		}
+		axes = append(axes, RatingAxisView{
+			Key:           key,
+			Label:         frontmatter.RatingAxisLabels[key],
+			Stars:         stars,
+			SelectedValue: sel,
+		})
+	}
+	overallDisplay := "—"
+	overrideValue := ""
+	if r != nil && !r.IsEmpty() {
+		overallDisplay = formatOverallDisplay(r.Effective())
+	}
+	if r != nil && r.HasOverride() {
+		overrideValue = formatOverallDisplay(*r.Overall)
+	}
+	return axes, overallDisplay, overrideValue
+}
+
+// formatOverallDisplay renders a float with at most one decimal,
+// trimming trailing zeros. "5" for integers, "4.5" for halves,
+// "4.6" for means, "6" for a bumped override.
+func formatOverallDisplay(v float64) string {
+	rounded := math.Round(v*10) / 10
+	if rounded == float64(int64(rounded)) {
+		return strconv.FormatInt(int64(rounded), 10)
+	}
+	return strconv.FormatFloat(rounded, 'f', 1, 64)
 }
 
 // buildBookDetailView reads the note from disk to get the review text
@@ -157,8 +232,18 @@ func (d *Dependencies) buildBookDetailView(ctx context.Context, row *store.BookR
 	if err != nil {
 		return BookDetailView{}, err
 	}
+	// Rating comes from frontmatter as the authoritative source, with a
+	// body-block fallback when frontmatter is absent but the `## Rating`
+	// section carries axis values (reader-fallback per SKILL.md §v0.2.1).
+	rating := n.Frontmatter.Rating()
+	if rating == nil {
+		if bp := n.Body.Rating(); bp != nil {
+			rating = bp.AsFrontmatterRating()
+		}
+	}
 	return BookDetailView{
 		BookRow:       *row,
+		Rating:        rating,
 		Review:        n.Body.Notes(),
 		TimelineLines: extractTimelineLines(n.Body),
 		Timeline:      markAudioSources(composeTimeline(row.StartedDates, row.FinishedDates, row.Status), timelineEvents(n.Body)),

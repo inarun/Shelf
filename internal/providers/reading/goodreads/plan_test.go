@@ -143,8 +143,8 @@ func TestBuildPlan_SkipsFullyPopulated(t *testing.T) {
 	fm.SetPublisher("Bantam")
 	fm.SetPublish("1989")
 	_ = fm.SetStatus("finished")
-	r := 5
-	_ = fm.SetRating(&r)
+	over := 5.0
+	_ = fm.SetRating(&frontmatter.Rating{Overall: &over})
 	fm.AppendFinished(*timeP(t, "2025-04-02"))
 	fm.SetReadCount(1)
 	fm.SetCategories([]string{"sci-fi"})

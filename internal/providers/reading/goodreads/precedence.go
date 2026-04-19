@@ -80,19 +80,19 @@ func computeChanges(r Record, n *note.Note) []FieldChange {
 		changes = append(changes, FieldChange{Field: frontmatter.KeySeriesIndex, Old: nil, New: *r.SeriesIndex})
 	}
 
-	// MyRating is a bare int; the sentinel "no rating" value is 0, which
-	// IsGap treats as populated. Wrap in a *int to align with precedence
-	// semantics.
-	var goodreadsRating *int
+	// Ratings post-v0.2.1 carry a dimensioned shape; a Rating{} with no
+	// TrialSystem and no Overall is a gap even though the pointer is
+	// non-nil. Goodreads supplies overall-only ratings as Rating.Overall.
+	var goodreadsRating *frontmatter.Rating
 	if r.MyRating > 0 {
-		g := r.MyRating
-		goodreadsRating = &g
+		over := float64(r.MyRating)
+		goodreadsRating = &frontmatter.Rating{Overall: &over}
 	}
-	if w, ok := precedence.Resolve([]precedence.Candidate{
+	if w, ok := precedence.ResolveWith([]precedence.Candidate{
 		{Source: precedence.SourceVaultFrontmatter, Value: fm.Rating()},
 		{Source: precedence.SourceGoodreads, Value: goodreadsRating},
-	}); ok && w.Source == precedence.SourceGoodreads {
-		changes = append(changes, FieldChange{Field: frontmatter.KeyRating, Old: nil, New: *goodreadsRating})
+	}, isRatingGap); ok && w.Source == precedence.SourceGoodreads {
+		changes = append(changes, FieldChange{Field: frontmatter.KeyRating, Old: nil, New: goodreadsRating})
 	}
 
 	// Status: "unread" is a gap per SKILL.md §Data precedence (Session 3
@@ -128,6 +128,21 @@ func computeChanges(r Record, n *note.Note) []FieldChange {
 	}
 
 	return changes
+}
+
+// isRatingGap treats a nil-pointer *frontmatter.Rating and an empty
+// Rating (no axes, no override) as gaps. Non-Rating types fall back to
+// the general IsGap predicate so ResolveWith works for mixed candidate
+// lists without surprises.
+func isRatingGap(v any) bool {
+	r, ok := v.(*frontmatter.Rating)
+	if !ok {
+		return precedence.IsGap(v)
+	}
+	if r == nil {
+		return true
+	}
+	return r.IsEmpty()
 }
 
 // hasImportedReview reports whether the note's Body ## Notes section

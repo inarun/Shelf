@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/inarun/Shelf/internal/vault/frontmatter"
 	"github.com/inarun/Shelf/internal/vault/paths"
 )
 
@@ -28,7 +29,8 @@ const (
 )
 
 var (
-	ErrRatingOutOfRange      = errors.New("rating must be between 1 and 5")
+	ErrRatingOverallRange    = errors.New("rating.overall must be between 0 and 10")
+	ErrRatingAxisNegative    = errors.New("rating axis values must be non-negative")
 	ErrStatusInvalid         = errors.New("status must be one of: unread, reading, paused, finished, dnf")
 	ErrStatusClobbersHistory = errors.New("refusing to set status back to 'unread' — would destroy read history")
 	ErrReviewTooLarge        = fmt.Errorf("review exceeds %d bytes", MaxReviewBytes)
@@ -39,13 +41,22 @@ var (
 	ErrFilenameExtension     = fmt.Errorf("filename must end in %s", FilenameExt)
 )
 
-// ValidateRating allows nil (clears the rating); otherwise 1..5.
-func ValidateRating(r *int) error {
+// ValidateRating allows nil (clears the rating). For non-nil Rating,
+// axis values must be non-negative and overall (when set) must be in
+// 0..10. Unknown axis keys are rejected earlier at JSON-decode time.
+func ValidateRating(r *frontmatter.Rating) error {
 	if r == nil {
 		return nil
 	}
-	if *r < 1 || *r > 5 {
-		return ErrRatingOutOfRange
+	for _, v := range r.TrialSystem {
+		if v < 0 {
+			return ErrRatingAxisNegative
+		}
+	}
+	if r.Overall != nil {
+		if *r.Overall < 0 || *r.Overall > 10 {
+			return ErrRatingOverallRange
+		}
 	}
 	return nil
 }

@@ -205,9 +205,6 @@ func (f *Frontmatter) SeriesIndex() *float64 { return f.getFloat(KeySeriesIndex)
 // because "not set" is semantically distinct from 0.
 func (f *Frontmatter) TotalPages() *int { return f.getInt(KeyTotalPages) }
 
-// Rating returns nil when unrated; 1..5 otherwise.
-func (f *Frontmatter) Rating() *int { return f.getInt(KeyRating) }
-
 // ReadCount defaults to 0 when absent.
 func (f *Frontmatter) ReadCount() int {
 	if p := f.getInt(KeyReadCount); p != nil {
@@ -247,20 +244,6 @@ func (f *Frontmatter) SetSeriesIndex(n *float64) error {
 		return fmt.Errorf("series_index %v invalid", *n)
 	}
 	f.setValue(KeySeriesIndex, scalarFloat(*n))
-	return nil
-}
-
-// SetRating accepts nil to clear the rating, or *r in the range 1..5.
-// Returns an error for out-of-range values; never silently clamps.
-func (f *Frontmatter) SetRating(r *int) error {
-	if r == nil {
-		f.setValue(KeyRating, nullScalar())
-		return nil
-	}
-	if *r < 1 || *r > 5 {
-		return fmt.Errorf("rating %d out of range 1..5", *r)
-	}
-	f.setValue(KeyRating, scalarInt(*r))
 	return nil
 }
 

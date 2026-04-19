@@ -246,8 +246,8 @@ func applyChange(n *note.Note, c FieldChange, importStamp time.Time) error {
 			return fm.SetSeriesIndex(&v)
 		}
 	case frontmatter.KeyRating:
-		if v, ok := c.New.(int); ok {
-			return fm.SetRating(&v)
+		if v, ok := c.New.(*frontmatter.Rating); ok {
+			return fm.SetRating(v)
 		}
 	case frontmatter.KeyStatus:
 		if v, ok := c.New.(string); ok {

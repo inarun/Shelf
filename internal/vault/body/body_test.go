@@ -354,33 +354,10 @@ func TestEnsureSection_Idempotent(t *testing.T) {
 	}
 }
 
-func TestSetRating_CreatesH1WhenMissing(t *testing.T) {
-	b, err := Parse([]byte("## Notes\n\nx\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := 4
-	if err := b.SetRating(&r); err != nil {
-		t.Fatal(err)
-	}
-	out := b.Serialize()
-	if !bytes.Contains(out, []byte("Rating — 4/5")) {
-		t.Errorf("rating line missing from output:\n%s", out)
-	}
-	if b.Blocks[0].Kind != KindH1 {
-		t.Errorf("expected H1 as first block, got %v", b.Blocks[0].Kind)
-	}
-}
-
-func TestSetRating_Rejects(t *testing.T) {
-	b, _ := Parse(nil)
-	for _, v := range []int{0, 6, -1} {
-		val := v
-		if err := b.SetRating(&val); err == nil {
-			t.Errorf("rating %d should be rejected", v)
-		}
-	}
-}
+// Session 15: body.SetRating (H1-line variant) removed; the Rating is
+// now a dedicated `## Rating` section written via SetRatingFromFrontmatter.
+// Detailed tests for the new path live in rating_test.go; body_test.go
+// retains the parse-legacy tests so existing notes round-trip cleanly.
 
 func kindsOf(b *Body) []Kind {
 	out := make([]Kind, len(b.Blocks))

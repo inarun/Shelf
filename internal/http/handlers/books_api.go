@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,18 +23,24 @@ const MaxJSONBodyBytes = 128 * 1024
 // PatchBook handles PATCH /api/books/{filename}. Request body is a JSON
 // object; each field is optional and only applied when present:
 //
-//   { "rating": 1..5 | null, "status": "<enum>", "review": "<string>" }
+//   {
+//     "rating": { "trial_system": {"emotional_impact": 5, ...}, "overall": 6 } | null,
+//     "status": "<enum>",
+//     "review": "<string>"
+//   }
 //
 // Semantics:
-//   - rating: null clears; 1..5 sets.
+//   - rating: null clears; object sets the dimensioned Trial-System
+//     rating (post-S15). Legacy scalar shapes are rejected.
 //   - status: must be a valid enum; status transitions apply timeline
 //     + started/finished array + read_count side effects. Transitions
 //     to "unread" from any non-unread state are rejected (400).
 //   - review: any UTF-8 string up to MaxReviewBytes; replaces the full
 //     contents of the "## Notes" section verbatim.
 //
-// Save path: SaveFrontmatter for pure-rating requests (never ErrStale),
-// SaveBody for anything that touches the body or status (ErrStale → 409).
+// Save path: every write goes through SaveBody — rating changes regen
+// the body `## Rating` section via dual-write, so frontmatter-only
+// writes aren't safe any more. ErrStale surfaces as 409 to the client.
 // After a successful write the index is updated via syncer.Apply.
 func (d *Dependencies) PatchBook(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxJSONBodyBytes)
@@ -86,12 +93,16 @@ func (d *Dependencies) PatchBook(w http.ResponseWriter, r *http.Request) {
 	currentStatus := n.Frontmatter.Status()
 	bodyChanged := false
 
-	// Apply rating mutation.
+	// Apply rating mutation. Dual-write rule (SKILL.md §v0.2.1): the
+	// body `## Rating` block is regenerated from frontmatter on every
+	// Shelf-authored write, so rating changes always touch the body.
 	if patch.ratingSet {
 		if err := n.Frontmatter.SetRating(patch.rating); err != nil {
 			d.writeJSONError(w, r, http.StatusBadRequest, "invalid", "rating: "+err.Error())
 			return
 		}
+		n.Body.SetRatingFromFrontmatter(patch.rating)
+		bodyChanged = true
 	}
 
 	// Apply status mutation + transition side effects.
@@ -117,7 +128,9 @@ func (d *Dependencies) PatchBook(w http.ResponseWriter, r *http.Request) {
 		bodyChanged = true
 	}
 
-	// Write: pick the lightest save path that preserves correctness.
+	// Write: every mutation touches the body now (rating dual-write,
+	// status side effects, review text), so SaveBody is the single path.
+	// A no-op patch skips the write entirely.
 	if bodyChanged {
 		if err := n.SaveBody(); err != nil {
 			if errors.Is(err, note.ErrStale) {
@@ -126,16 +139,6 @@ func (d *Dependencies) PatchBook(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			d.Logger.Error("save body",
-				"filename", base,
-				"request_id", middleware.RequestIDFrom(r.Context()),
-				"err", err,
-			)
-			d.writeJSONError(w, r, http.StatusInternalServerError, "server", "write failed")
-			return
-		}
-	} else if patch.ratingSet {
-		if err := n.SaveFrontmatter(); err != nil {
-			d.Logger.Error("save frontmatter",
 				"filename", base,
 				"request_id", middleware.RequestIDFrom(r.Context()),
 				"err", err,
@@ -187,7 +190,7 @@ func (d *Dependencies) PatchBook(w http.ResponseWriter, r *http.Request) {
 // distinguish "clear rating" (null) from "don't touch rating" (absent).
 type patchReq struct {
 	ratingSet bool
-	rating    *int
+	rating    *frontmatter.Rating
 	statusSet bool
 	status    string
 	reviewSet bool
@@ -228,11 +231,11 @@ func parsePatchBody(r io.Reader) (patchReq, error) {
 	if v, ok := raw["rating"]; ok {
 		out.ratingSet = true
 		if string(v) != "null" {
-			var n int
-			if err := json.Unmarshal(v, &n); err != nil {
-				return patchReq{}, fmt.Errorf("rating must be an integer or null")
+			r, err := decodeRatingBody(v)
+			if err != nil {
+				return patchReq{}, err
 			}
-			out.rating = &n
+			out.rating = r
 		}
 	}
 	if v, ok := raw["status"]; ok {
@@ -246,6 +249,47 @@ func parsePatchBody(r io.Reader) (patchReq, error) {
 		if err := json.Unmarshal(v, &out.review); err != nil {
 			return patchReq{}, fmt.Errorf("review must be a string")
 		}
+	}
+	return out, nil
+}
+
+// ratingJSON mirrors the wire shape of a dimensioned rating payload.
+// DisallowUnknownFields catches typos like `trialSystem` before we get
+// into axis-key validation.
+type ratingJSON struct {
+	TrialSystem map[string]int `json:"trial_system"`
+	Overall     *float64       `json:"overall"`
+}
+
+// decodeRatingBody unmarshals and validates the new dimensioned rating
+// shape. Legacy scalar rating (`"rating": 5`) is rejected — post-S15
+// clients must send the map shape (null clears).
+func decodeRatingBody(raw json.RawMessage) (*frontmatter.Rating, error) {
+	trimmed := bytes.TrimSpace([]byte(raw))
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, fmt.Errorf("rating must be an object of shape {trial_system, overall} or null")
+	}
+	var r ratingJSON
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
+		return nil, fmt.Errorf("rating: %w", err)
+	}
+	for k := range r.TrialSystem {
+		found := false
+		for _, a := range frontmatter.RatingAxes {
+			if a == k {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("rating: unknown axis %q", k)
+		}
+	}
+	out := &frontmatter.Rating{
+		TrialSystem: r.TrialSystem,
+		Overall:     r.Overall,
 	}
 	return out, nil
 }
@@ -311,10 +355,28 @@ func patchBookJSON(v BookDetailView) map[string]any {
 		"review":         v.Review,
 		"timeline":       orEmpty(v.TimelineLines),
 	}
-	m["rating"] = v.Rating
+	// v.Rating shadows BookRow.Rating; it carries the structured Rating.
+	m["rating"] = ratingToJSON(v.Rating)
 	m["total_pages"] = v.TotalPages
 	m["series_index"] = v.SeriesIndex
 	return m
+}
+
+// ratingToJSON projects a *frontmatter.Rating to the wire shape. nil
+// becomes JSON null; populated Rating becomes the map shape post-S15.
+func ratingToJSON(r *frontmatter.Rating) any {
+	if r == nil || r.IsEmpty() {
+		return nil
+	}
+	axes := map[string]int{}
+	for k, v := range r.TrialSystem {
+		axes[k] = v
+	}
+	out := map[string]any{
+		"trial_system": axes,
+		"overall":      r.Overall,
+	}
+	return out
 }
 
 func orEmpty[T any](s []T) []T {

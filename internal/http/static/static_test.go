@@ -112,8 +112,15 @@ func TestAppJSNoExternalURLs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The SVG/XLink XMLNS strings are Web Platform identifiers used with
+	// createElementNS — they're not network fetches. Redact them so the
+	// literal scan doesn't false-positive on "http://".
+	scrubbed := strings.ReplaceAll(string(data),
+		`"http://www.w3.org/2000/svg"`, `"__svgns__"`)
+	scrubbed = strings.ReplaceAll(scrubbed,
+		`"http://www.w3.org/1999/xlink"`, `"__xlinkns__"`)
 	for _, bad := range []string{"http://", "https://", "cdn.", "googleapis", "jsdelivr"} {
-		if strings.Contains(string(data), bad) {
+		if strings.Contains(scrubbed, bad) {
 			t.Errorf("app.js contains forbidden external reference %q — SKILL.md forbids external resources", bad)
 		}
 	}

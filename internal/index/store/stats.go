@@ -12,13 +12,17 @@ import (
 // ("unread"/"reading"/"paused"/"finished"/"dnf"); missing keys mean
 // zero. TotalReads sums the read_count column — a re-read book
 // contributes multiple to that total. AverageRating is unrounded; the
-// template formats it.
+// template formats it. RatingHistogram is keyed by rating bucket
+// (1..MaxRating) — index 0 is reserved for unrated books. Bumped
+// ratings (>5, via Trial-System overrides) create higher buckets on
+// demand.
 type StatsSummary struct {
-	StatusCounts  map[string]int64
-	TotalBooks    int64
-	TotalReads    int64
-	RatedBooks    int64
-	AverageRating float64
+	StatusCounts    map[string]int64
+	TotalBooks      int64
+	TotalReads      int64
+	RatedBooks      int64
+	AverageRating   float64
+	RatingHistogram []int64 // RatingHistogram[n] = count of books rated n (rounded); [0] = unrated
 }
 
 // YearStats is a single-year row on the "books & pages per year"
@@ -40,6 +44,9 @@ func (s *Store) Stats(ctx context.Context) (*StatsSummary, error) {
 		return nil, err
 	}
 	if err := s.readAggregates(ctx, out); err != nil {
+		return nil, err
+	}
+	if err := s.readRatingHistogram(ctx, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -85,6 +92,53 @@ FROM books
 	if ratedBooks.Int64 > 0 {
 		sm.AverageRating = avgRating.Float64
 	}
+	return nil
+}
+
+// readRatingHistogram fills RatingHistogram from the rating column.
+// Bucket 0 is reserved for unrated books; buckets 1..N are counts at
+// each integer rating (SQLite stores the rounded effective value from
+// the frontmatter Rating struct, see internal/vault/frontmatter.Rating).
+// The slice is zero-padded up to the max observed rating so callers
+// can iterate the range without sparse checks.
+func (s *Store) readRatingHistogram(ctx context.Context, sm *StatsSummary) error {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT COALESCE(rating, 0) AS bucket, count(*) AS n
+FROM books
+GROUP BY bucket
+ORDER BY bucket
+`)
+	if err != nil {
+		return fmt.Errorf("store: rating histogram query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Accumulate into a map, then flatten to a dense slice sized to max.
+	buckets := map[int64]int64{}
+	var maxBucket int64
+	for rows.Next() {
+		var bucket, n int64
+		if err := rows.Scan(&bucket, &n); err != nil {
+			return fmt.Errorf("store: rating histogram scan: %w", err)
+		}
+		buckets[bucket] = n
+		if bucket > maxBucket {
+			maxBucket = bucket
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("store: rating histogram rows: %w", err)
+	}
+	// Always include at least 1..5 so the chart isn't empty when every
+	// book is unrated.
+	if maxBucket < 5 {
+		maxBucket = 5
+	}
+	out := make([]int64, maxBucket+1)
+	for k, v := range buckets {
+		out[k] = v
+	}
+	sm.RatingHistogram = out
 	return nil
 }
 

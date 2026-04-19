@@ -242,11 +242,10 @@ func buildBookRow(filename string, n *note.Note) store.BookRow {
 
 	readCount := int64(fm.ReadCount())
 
-	var rating *int64
-	if r := fm.Rating(); r != nil {
-		rr := int64(*r)
-		rating = &rr
-	}
+	// The SQLite `rating` column stays scalar through S15 (S16 adds
+	// rating_overall REAL + rating_dimensions JSON). Populate it with
+	// the rounded effective value so card sorting / filtering work.
+	rating := fm.Rating().EffectiveRounded()
 
 	var totalPages *int64
 	if p := fm.TotalPages(); p != nil {

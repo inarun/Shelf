@@ -24,18 +24,24 @@ func mustPatch(t *testing.T, d *Dependencies, filename, bodyJSON string) *httpte
 
 func TestPatchRatingHappyPath(t *testing.T) {
 	d, books := seedDeps(t)
-	rec := mustPatch(t, d, "Hyperion%20by%20Dan%20Simmons.md", `{"rating": 5}`)
+	body := `{"rating": {"trial_system": {"emotional_impact": 5, "characters": 4, "plot": 5, "dialogue_prose": 3, "cinematography_worldbuilding": 5}, "overall": 6}}`
+	rec := mustPatch(t, d, "Hyperion%20by%20Dan%20Simmons.md", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
 	}
-
-	// Assert frontmatter on disk actually changed.
 	data, err := os.ReadFile(filepath.Join(books, "Hyperion by Dan Simmons.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "rating: 5") {
-		t.Errorf("expected rating: 5 in file; content:\n%s", data)
+	if !strings.Contains(string(data), "trial_system:") {
+		t.Errorf("expected trial_system: key in file; content:\n%s", data)
+	}
+	if !strings.Contains(string(data), "overall: 6") {
+		t.Errorf("expected overall: 6 in file; content:\n%s", data)
+	}
+	// Dual-write: body should carry a regenerated `## Rating` section.
+	if !strings.Contains(string(data), "## Rating — ★ 6/5") {
+		t.Errorf("expected managed `## Rating` body section; content:\n%s", data)
 	}
 }
 
@@ -52,17 +58,37 @@ func TestPatchRatingNullClears(t *testing.T) {
 	if strings.Contains(string(data), "rating: 4") {
 		t.Errorf("rating not cleared; content:\n%s", data)
 	}
+	if strings.Contains(string(data), "## Rating") {
+		t.Errorf("body `## Rating` section should have been removed on null patch; content:\n%s", data)
+	}
 }
 
-func TestPatchRatingOutOfRangeIs400(t *testing.T) {
+func TestPatchRatingRejectsLegacyScalar(t *testing.T) {
 	d, _ := seedDeps(t)
-	for _, body := range []string{`{"rating": 0}`, `{"rating": 6}`, `{"rating": -1}`} {
+	rec := mustPatch(t, d, "Hyperion%20by%20Dan%20Simmons.md", `{"rating": 5}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("legacy scalar rating: status = %d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"invalid"`) {
+		t.Errorf("missing invalid error envelope: %s", rec.Body.String())
+	}
+}
+
+func TestPatchRatingRejectsUnknownAxis(t *testing.T) {
+	d, _ := seedDeps(t)
+	rec := mustPatch(t, d, "Hyperion%20by%20Dan%20Simmons.md",
+		`{"rating": {"trial_system": {"rogue_axis": 5}}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown axis: status = %d, want 400", rec.Code)
+	}
+}
+
+func TestPatchRatingOverallOutOfRangeIs400(t *testing.T) {
+	d, _ := seedDeps(t)
+	for _, body := range []string{`{"rating": {"overall": 11}}`, `{"rating": {"overall": -1}}`} {
 		rec := mustPatch(t, d, "Hyperion%20by%20Dan%20Simmons.md", body)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("body=%s: status = %d, want 400", body, rec.Code)
-		}
-		if !strings.Contains(rec.Body.String(), `"code":"invalid"`) {
-			t.Errorf("body=%s: missing invalid error envelope", body)
 		}
 	}
 }
@@ -118,7 +144,7 @@ func TestPatchReviewReplacesNotes(t *testing.T) {
 
 func TestPatch404OnUnknownFilename(t *testing.T) {
 	d, _ := seedDeps(t)
-	rec := mustPatch(t, d, "Nonexistent.md", `{"rating": 3}`)
+	rec := mustPatch(t, d, "Nonexistent.md", `{"rating": {"overall": 3}}`)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
@@ -126,7 +152,7 @@ func TestPatch404OnUnknownFilename(t *testing.T) {
 
 func TestPatch400OnTraversal(t *testing.T) {
 	d, _ := seedDeps(t)
-	rec := mustPatch(t, d, "..%2Fetc.md", `{"rating": 3}`)
+	rec := mustPatch(t, d, "..%2Fetc.md", `{"rating": {"overall": 3}}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
@@ -160,17 +186,18 @@ func TestPatch400OnOversizedReview(t *testing.T) {
 
 func TestPatchRespIncludesUpdatedBook(t *testing.T) {
 	d, _ := seedDeps(t)
-	rec := mustPatch(t, d, "Hyperion%20by%20Dan%20Simmons.md", `{"rating": 5}`)
+	body := `{"rating": {"trial_system": {"plot": 5}, "overall": 5}}`
+	rec := mustPatch(t, d, "Hyperion%20by%20Dan%20Simmons.md", body)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	var resp struct {
 		OK   bool `json:"ok"`
 		Book struct {
-			Filename string  `json:"filename"`
-			Rating   float64 `json:"rating"`
-			Status   string  `json:"status"`
-			Review   string  `json:"review"`
+			Filename string         `json:"filename"`
+			Rating   map[string]any `json:"rating"`
+			Status   string         `json:"status"`
+			Review   string         `json:"review"`
 		} `json:"book"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -182,7 +209,13 @@ func TestPatchRespIncludesUpdatedBook(t *testing.T) {
 	if resp.Book.Filename != "Hyperion by Dan Simmons.md" {
 		t.Errorf("book.filename = %q", resp.Book.Filename)
 	}
-	if int(resp.Book.Rating) != 5 {
-		t.Errorf("book.rating = %v, want 5", resp.Book.Rating)
+	if resp.Book.Rating == nil {
+		t.Fatalf("book.rating = nil, want map")
+	}
+	if ts, ok := resp.Book.Rating["trial_system"].(map[string]any); !ok || ts["plot"] != float64(5) {
+		t.Errorf("book.rating.trial_system = %v, want plot=5", resp.Book.Rating["trial_system"])
+	}
+	if overall, ok := resp.Book.Rating["overall"].(float64); !ok || overall != 5 {
+		t.Errorf("book.rating.overall = %v, want 5", resp.Book.Rating["overall"])
 	}
 }

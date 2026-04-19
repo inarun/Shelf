@@ -204,23 +204,39 @@ func TestNavEmitsIconSpriteAndHelpOverlay(t *testing.T) {
 	}
 }
 
-func TestBookDetailRatingUsesStarIcons(t *testing.T) {
-	// Session 8 replaced the numeric rating buttons with star SVG buttons.
-	// The <use href="#icon-star-filled"/> reference ties each button to the
-	// sprite symbol; if this test fails, either the sprite id changed or
-	// the template regressed.
+func TestBookDetailRatingGridHasFiveAxes(t *testing.T) {
+	// Session 15 replaced the single-axis star row with a 5-axis
+	// Trial-System grid. Each axis is a nested <fieldset> with a
+	// visible legend, a star row, and a "+" bump button.
 	tmpl, err := Parse()
 	if err != nil {
 		t.Fatal(err)
 	}
+	axes := []map[string]any{}
+	for _, a := range []struct{ key, label string }{
+		{"emotional_impact", "Emotional Impact"},
+		{"characters", "Characters"},
+		{"plot", "Plot"},
+		{"dialogue_prose", "Dialogue/Prose"},
+		{"cinematography_worldbuilding", "Cinematography/Worldbuilding"},
+	} {
+		axes = append(axes, map[string]any{
+			"Key":           a.key,
+			"Label":         a.label,
+			"Stars":         []int{1, 2, 3, 4, 5},
+			"SelectedValue": 0,
+		})
+	}
 	data := map[string]any{
 		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library",
-		"Warnings":    []string{},
-		"RatingRange": []int{1, 2, 3, 4, 5},
+		"Warnings":       []string{},
+		"RatingAxes":     axes,
+		"OverallDisplay": "—",
+		"OverrideValue":  "",
 		"Book": map[string]any{
 			"Filename": "Foo by Bar.md", "Title": "Foo",
 			"Authors": []string{"Bar"}, "Status": "reading",
-			"Rating":        (*int)(nil),
+			"Rating":        nil,
 			"Review":        "",
 			"TimelineLines": []string{},
 			"CanonicalName": true,
@@ -234,14 +250,34 @@ func TestBookDetailRatingUsesStarIcons(t *testing.T) {
 		t.Fatalf("execute book_detail: %v", err)
 	}
 	out := buf.String()
+	if !strings.Contains(out, `class="rating-grid"`) {
+		t.Errorf("outer rating-grid fieldset missing; body:\n%s", out)
+	}
+	for _, axisKey := range []string{
+		"emotional_impact", "characters", "plot",
+		"dialogue_prose", "cinematography_worldbuilding",
+	} {
+		if !strings.Contains(out, `data-axis="`+axisKey+`"`) {
+			t.Errorf("axis %q missing", axisKey)
+		}
+	}
 	if !strings.Contains(out, `class="rating-star"`) {
-		t.Errorf("rating buttons missing rating-star class")
+		t.Errorf("rating-star buttons missing")
 	}
 	if !strings.Contains(out, `href="#icon-star-filled"`) {
-		t.Errorf("rating buttons missing star SVG <use>; body:\n%s", out)
+		t.Errorf("star sprite <use> missing")
 	}
-	if !strings.Contains(out, `aria-label="1 star"`) || !strings.Contains(out, `aria-label="5 stars"`) {
-		t.Errorf("rating buttons missing pluralized aria-label; body:\n%s", out)
+	if !strings.Contains(out, `data-bump`) {
+		t.Errorf("bump button missing")
+	}
+	if !strings.Contains(out, `data-overall-output`) {
+		t.Errorf("aria-live overall output missing")
+	}
+	if !strings.Contains(out, `data-override-checkbox`) {
+		t.Errorf("override checkbox missing")
+	}
+	if !strings.Contains(out, `data-override-input`) {
+		t.Errorf("override input missing")
 	}
 }
 
@@ -292,27 +328,43 @@ func TestSkipLinkOnEveryPage(t *testing.T) {
 	}
 }
 
-func TestRatingUsesFieldsetWithLegend(t *testing.T) {
-	// Session 9 upgraded the rating widget to <fieldset><legend>...
-	// The <h2>Rating</h2> heading stays for outline; the legend is
-	// sr-only. The old role="group" + aria-label="Star rating" are
-	// removed because the fieldset+legend covers both.
+func TestRatingGridUsesFieldsetWithLegend(t *testing.T) {
+	// Session 15 preserves the Session 9 fieldset+legend pattern at the
+	// outer rating-grid level: the outer fieldset has an sr-only legend
+	// ("Trial System rating"), and each of the five axis fieldsets
+	// carries a visible legend. The <h2>Rating</h2> outline anchor stays.
 	tmpl, err := Parse()
 	if err != nil {
 		t.Fatal(err)
 	}
+	axes := []map[string]any{}
+	for _, a := range []struct{ key, label string }{
+		{"emotional_impact", "Emotional Impact"},
+		{"characters", "Characters"},
+		{"plot", "Plot"},
+		{"dialogue_prose", "Dialogue/Prose"},
+		{"cinematography_worldbuilding", "Cinematography/Worldbuilding"},
+	} {
+		axes = append(axes, map[string]any{
+			"Key":   a.key,
+			"Label": a.label,
+			"Stars": []int{1, 2, 3, 4, 5}, "SelectedValue": 0,
+		})
+	}
 	data := map[string]any{
-		"CSRFToken":   "t",
-		"RequestID":   "r",
-		"ActiveNav":   "library",
-		"Warnings":    []string{},
-		"RatingRange": []int{1, 2, 3, 4, 5},
+		"CSRFToken":      "t",
+		"RequestID":      "r",
+		"ActiveNav":      "library",
+		"Warnings":       []string{},
+		"RatingAxes":     axes,
+		"OverallDisplay": "—",
+		"OverrideValue":  "",
 		"Book": map[string]any{
 			"Filename":      "Foo by Bar.md",
 			"Title":         "Foo",
 			"Authors":       []string{"Bar"},
 			"Status":        "reading",
-			"Rating":        (*int)(nil),
+			"Rating":        nil,
 			"Review":        "",
 			"TimelineLines": []string{},
 			"CanonicalName": true,
@@ -326,20 +378,30 @@ func TestRatingUsesFieldsetWithLegend(t *testing.T) {
 		t.Fatalf("execute book_detail: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, `<fieldset class="rating-widget"`) {
-		t.Errorf("rating widget must be a <fieldset class=\"rating-widget\"; body:\n%s", out)
+	if !strings.Contains(out, `<fieldset class="rating-grid"`) {
+		t.Errorf("rating grid must be a <fieldset class=\"rating-grid\"; body:\n%s", out)
 	}
-	if !strings.Contains(out, `<legend class="sr-only">Star rating</legend>`) {
-		t.Errorf("rating widget missing sr-only <legend>; body:\n%s", out)
+	if !strings.Contains(out, `<legend class="sr-only">Trial System rating</legend>`) {
+		t.Errorf("outer grid missing sr-only <legend>; body:\n%s", out)
 	}
-	// The <h2>Rating</h2> outline anchor stays.
+	for _, want := range []string{
+		`<legend>Emotional Impact</legend>`,
+		`<legend>Characters</legend>`,
+		`<legend>Plot</legend>`,
+		`<legend>Dialogue/Prose</legend>`,
+		`<legend>Cinematography/Worldbuilding</legend>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing axis legend %q; body:\n%s", want, out)
+		}
+	}
 	if !strings.Contains(out, `<h2>Rating</h2>`) {
 		t.Errorf("book_detail outline must still emit <h2>Rating</h2>; body:\n%s", out)
 	}
-	// No leftover role="group" on the rating widget itself.
-	ratingRx := regexp.MustCompile(`(?is)class="rating-widget"[^>]*role="group"`)
+	// No leftover role="group" on the rating grid itself.
+	ratingRx := regexp.MustCompile(`(?is)class="rating-grid"[^>]*role="group"`)
 	if ratingRx.MatchString(out) {
-		t.Errorf("rating widget should not carry role=\"group\" once <fieldset> is in place; body:\n%s", out)
+		t.Errorf("rating grid should not carry role=\"group\" once <fieldset> is in place; body:\n%s", out)
 	}
 }
 

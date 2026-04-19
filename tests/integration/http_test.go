@@ -138,9 +138,10 @@ func TestEndToEnd_LibraryThenRatingPatchThenImport(t *testing.T) {
 	}
 
 	// 3. PATCH rating via JSON API (cookie jar carries session cookie).
+	// Post-S15 the rating is a dimensioned map (trial_system + overall).
 	resp = doReq(t, client, http.MethodPatch,
 		base+"/api/books/"+pathEscape("Hyperion by Dan Simmons.md"),
-		strings.NewReader(`{"rating": 5}`),
+		strings.NewReader(`{"rating": {"overall": 5}}`),
 		func(r *http.Request) {
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("X-CSRF-Token", csrf)
@@ -156,7 +157,7 @@ func TestEndToEnd_LibraryThenRatingPatchThenImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(disk), "rating: 5") {
+	if !strings.Contains(string(disk), "overall: 5") {
 		t.Errorf("frontmatter rating not updated; content:\n%s", disk)
 	}
 
@@ -296,7 +297,7 @@ func TestEndToEnd_PatchWithoutCSRF403(t *testing.T) {
 	// PATCH without CSRF header — must be rejected even with cookie.
 	resp = doReq(t, client, http.MethodPatch,
 		base+"/api/books/"+pathEscape("Hyperion by Dan Simmons.md"),
-		strings.NewReader(`{"rating": 3}`),
+		strings.NewReader(`{"rating": {"overall": 3}}`),
 		func(r *http.Request) { r.Header.Set("Content-Type", "application/json") })
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {

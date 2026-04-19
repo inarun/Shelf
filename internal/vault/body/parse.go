@@ -97,6 +97,12 @@ func headingTextH2(region []byte) string {
 // its Parsed view. The region's Raw always equals the input slice.
 func parseH2Region(region []byte) Block {
 	heading := headingTextH2(region)
+	// The Rating section carries a computed-overall suffix in its
+	// heading ("## Rating — ★ 6/5"), so a literal map lookup won't
+	// match. Detect the prefix explicitly.
+	if isRatingHeading(heading) {
+		return Block{Kind: KindRating, Raw: region, Parsed: parseRatingSection(region)}
+	}
 	kind, ok := recognizedH2[heading]
 	if !ok {
 		return Block{Kind: KindUnknown, Raw: region}
@@ -110,6 +116,43 @@ func parseH2Region(region []byte) Block {
 		return Block{Kind: kind, Raw: region, Parsed: parseTimelineSection(region)}
 	}
 	return Block{Kind: kind, Raw: region}
+}
+
+// isRatingHeading matches "Rating" optionally followed by a dash and
+// overall-score suffix. Matches "Rating", "Rating — ★ 6/5", "Rating - 4/5".
+// Whitespace-tolerant. Plural / "Ratings notes" headings are NOT
+// considered matches.
+func isRatingHeading(h string) bool {
+	h = strings.TrimSpace(h)
+	if h == "Rating" {
+		return true
+	}
+	rest, ok := stripPrefix(h, "Rating")
+	if !ok {
+		return false
+	}
+	rest = strings.TrimLeft(rest, " \t")
+	// Must start with an em-dash, en-dash, or ASCII hyphen separator.
+	r, w := firstRune(rest)
+	if r != '\u2014' && r != '\u2013' && r != '-' {
+		return false
+	}
+	_ = w
+	return true
+}
+
+func stripPrefix(s, prefix string) (string, bool) {
+	if len(s) < len(prefix) || s[:len(prefix)] != prefix {
+		return s, false
+	}
+	return s[len(prefix):], true
+}
+
+func firstRune(s string) (rune, int) {
+	for _, r := range s {
+		return r, len(string(r))
+	}
+	return 0, 0
 }
 
 // bodyAfterHeading returns the region's bytes after the first line

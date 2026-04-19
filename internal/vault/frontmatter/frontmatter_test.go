@@ -106,7 +106,7 @@ Body text.
 	if len(cats) != 2 || cats[0] != "science-fiction" || cats[1] != "space-opera" {
 		t.Errorf("Categories got %v", cats)
 	}
-	if r := f.Rating(); r == nil || *r != 4 {
+	if r := f.Rating(); r == nil || !r.HasOverride() || *r.Overall != 4 {
 		t.Errorf("Rating got %v", r)
 	}
 	if f.Status() != "finished" {
@@ -217,8 +217,8 @@ func TestParse_BodyPreservedVerbatim(t *testing.T) {
 }
 
 func TestSerialize_RoundTripAfterSetRating(t *testing.T) {
-	// Rating change updates only the rating line; every other line
-	// byte-equivalent.
+	// Rating change keeps non-rating lines byte-identical; the rating
+	// region itself is rewritten as a YAML map (post-S15).
 	input := []byte(`---
 title: Hyperion
 authors:
@@ -232,44 +232,28 @@ body
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := 5
-	if err := f.SetRating(&r); err != nil {
+	over := 5.0
+	if err := f.SetRating(&Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	out, err := f.Serialize(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Post-condition: the only line that differs is the rating one.
-	diff := diffLines(string(input), string(out))
-	if len(diff) != 1 {
-		t.Errorf("expected exactly 1 changed line, got %d:\n%v", len(diff), diff)
-	}
-	if len(diff) > 0 && !strings.Contains(diff[0], "rating") {
-		t.Errorf("changed line isn't the rating: %q", diff[0])
-	}
-}
-
-func TestSetRating_OutOfRange(t *testing.T) {
-	f := NewEmpty()
-	bad := 6
-	if err := f.SetRating(&bad); err == nil {
-		t.Error("expected error for rating 6")
-	}
-	low := 0
-	if err := f.SetRating(&low); err == nil {
-		t.Error("expected error for rating 0")
-	}
-	// nil clears; valid
-	if err := f.SetRating(nil); err != nil {
-		t.Errorf("nil rating should clear, got: %v", err)
-	}
-	// 1..5 valid
-	for _, v := range []int{1, 2, 3, 4, 5} {
-		val := v
-		if err := f.SetRating(&val); err != nil {
-			t.Errorf("rating %d should be valid, got: %v", v, err)
+	// Post-condition: every non-rating line from input survives in out.
+	for _, line := range []string{
+		"title: Hyperion", "authors:", "- Dan Simmons", "status: finished",
+	} {
+		if !strings.Contains(string(out), line) {
+			t.Errorf("line %q missing after rating rewrite:\n%s", line, out)
 		}
+	}
+	// And the new map shape is present.
+	if !strings.Contains(string(out), "rating:") {
+		t.Errorf("rating key missing")
+	}
+	if !strings.Contains(string(out), "overall: 5") {
+		t.Errorf("overall: 5 missing:\n%s", out)
 	}
 }
 
@@ -338,8 +322,8 @@ body
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := 5
-	if err := f.SetRating(&r); err != nil {
+	over := 5.0
+	if err := f.SetRating(&Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	out, err := f.Serialize(body)
@@ -568,8 +552,8 @@ rating: 3
 	if keys := f.MutatedKeys(); len(keys) != 0 {
 		t.Errorf("fresh parse should report 0 mutations, got %v", keys)
 	}
-	r := 5
-	if err := f.SetRating(&r); err != nil {
+	over := 5.0
+	if err := f.SetRating(&Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	f.AppendStarted(mustParseDate(t, "2025-04-02"))
@@ -615,27 +599,3 @@ func mustParseDate(t *testing.T, s string) time.Time {
 	return d
 }
 
-// diffLines returns the lines present in b that are not in a, at the
-// same index. Simple enough for small fixtures; not a general LCS.
-func diffLines(a, b string) []string {
-	al := strings.Split(a, "\n")
-	bl := strings.Split(b, "\n")
-	max := len(al)
-	if len(bl) > max {
-		max = len(bl)
-	}
-	var out []string
-	for i := 0; i < max; i++ {
-		var av, bv string
-		if i < len(al) {
-			av = al[i]
-		}
-		if i < len(bl) {
-			bv = bl[i]
-		}
-		if av != bv {
-			out = append(out, "- "+av+"\n+ "+bv)
-		}
-	}
-	return out
-}

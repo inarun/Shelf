@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/inarun/Shelf/internal/vault/frontmatter"
 )
 
 const sampleFile = `---
@@ -97,10 +99,11 @@ func TestSaveBody_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := 5
-	if err := n.Body.SetRating(&r); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
+	n.Body.SetRatingFromFrontmatter(n.Frontmatter.Rating())
 	if err := n.SaveBody(); err != nil {
 		t.Fatal(err)
 	}
@@ -109,8 +112,8 @@ func TestSaveBody_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(got, []byte("Rating — 5/5")) {
-		t.Errorf("saved body missing rating line:\n%s", got)
+	if !bytes.Contains(got, []byte("## Rating — ★ 5/5")) {
+		t.Errorf("saved body missing managed rating section:\n%s", got)
 	}
 }
 
@@ -170,10 +173,11 @@ func TestSaveBody_AtomicReplace_NoTempLeft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := 5
-	if err := n.Body.SetRating(&r); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
+	n.Body.SetRatingFromFrontmatter(n.Frontmatter.Rating())
 	if err := n.SaveBody(); err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +210,8 @@ func TestSaveFrontmatter_PreservesConcurrentBodyEdits(t *testing.T) {
 	bumpMtime(t, path, 2*time.Second)
 
 	// App-side frontmatter mutation: rating change.
-	newRating := 5
-	if err := n.Frontmatter.SetRating(&newRating); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.SaveFrontmatter(); err != nil {
@@ -221,12 +225,12 @@ func TestSaveFrontmatter_PreservesConcurrentBodyEdits(t *testing.T) {
 	if !bytes.Contains(got, []byte("EXTERNALLY EDITED.")) {
 		t.Errorf("external body edit lost:\n%s", got)
 	}
-	if !bytes.Contains(got, []byte("rating: 5")) {
+	if !bytes.Contains(got, []byte("overall: 5")) {
 		t.Errorf("frontmatter rating not applied:\n%s", got)
 	}
-	// Original rating line must be gone.
+	// Original scalar rating line must be gone.
 	if bytes.Contains(got, []byte("rating: 3")) {
-		t.Errorf("old rating still present:\n%s", got)
+		t.Errorf("old scalar rating still present:\n%s", got)
 	}
 }
 
@@ -244,8 +248,8 @@ func TestSaveFrontmatter_UnconditionalOnStaleFile(t *testing.T) {
 	bumpMtime(t, path, 3*time.Second)
 
 	// Mutate frontmatter; SaveFrontmatter must NOT refuse with ErrStale.
-	r := 4
-	if err := n.Frontmatter.SetRating(&r); err != nil {
+	over := 4.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.SaveFrontmatter(); err != nil {
@@ -253,7 +257,7 @@ func TestSaveFrontmatter_UnconditionalOnStaleFile(t *testing.T) {
 	}
 
 	got, _ := os.ReadFile(path)
-	if !bytes.Contains(got, []byte("rating: 4")) {
+	if !bytes.Contains(got, []byte("overall: 4")) {
 		t.Errorf("new rating not applied:\n%s", got)
 	}
 }
@@ -267,8 +271,8 @@ func TestSaveFrontmatter_AtomicReplace_NoTempLeft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := 5
-	if err := n.Frontmatter.SetRating(&r); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.SaveFrontmatter(); err != nil {
@@ -300,8 +304,8 @@ func TestSaveFrontmatter_DoesNotOverwriteUntouchedFields(t *testing.T) {
 	writeFile(t, path, externallyEdited)
 	bumpMtime(t, path, 2*time.Second)
 
-	r := 5
-	if err := n.Frontmatter.SetRating(&r); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.SaveFrontmatter(); err != nil {
@@ -312,7 +316,7 @@ func TestSaveFrontmatter_DoesNotOverwriteUntouchedFields(t *testing.T) {
 	if !bytes.Contains(got, []byte("title: Fall of Hyperion")) {
 		t.Errorf("external title edit clobbered:\n%s", got)
 	}
-	if !bytes.Contains(got, []byte("rating: 5")) {
+	if !bytes.Contains(got, []byte("overall: 5")) {
 		t.Errorf("rating not applied:\n%s", got)
 	}
 }

@@ -48,10 +48,12 @@ func buildNewNote(r Record, importStamp time.Time) (*frontmatter.Frontmatter, *b
 	// start date.
 	fm.SetAuthors(r.Authors) // (re-set OK; keeps both if first call was nil)
 
-	// Rating (nullable).
+	// Rating (nullable). Goodreads only provides an overall score, so
+	// TrialSystem stays empty — the dimensioned axes remain for the user
+	// to fill in post-v0.2.1.
 	if r.MyRating > 0 {
-		mr := r.MyRating
-		if err := fm.SetRating(&mr); err != nil {
+		over := float64(r.MyRating)
+		if err := fm.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -69,12 +71,12 @@ func buildNewNote(r Record, importStamp time.Time) (*frontmatter.Frontmatter, *b
 		fm.SetReadCount(1)
 	}
 
-	// Body: title + optional rating line + optional Notes with review.
+	// Body: title + optional Rating section (dual-written from
+	// frontmatter) + optional Notes with review.
 	bd := &body.Body{}
 	bd.SetTitle(r.Title)
-	if r.MyRating > 0 {
-		mr := r.MyRating
-		_ = bd.SetRating(&mr)
+	if rating := fm.Rating(); rating != nil {
+		bd.SetRatingFromFrontmatter(rating)
 	}
 	if strings.TrimSpace(r.Review) != "" {
 		bd.SetNotes(composeReviewBody(r.Review, importStamp))

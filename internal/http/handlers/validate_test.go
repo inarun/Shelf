@@ -6,22 +6,30 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inarun/Shelf/internal/vault/frontmatter"
 )
 
-func intp(n int) *int { return &n }
+func fp(v float64) *float64 { return &v }
 
 func TestValidateRating(t *testing.T) {
 	cases := []struct {
 		name string
-		in   *int
+		in   *frontmatter.Rating
 		err  error
 	}{
 		{"nil ok", nil, nil},
-		{"one", intp(1), nil},
-		{"five", intp(5), nil},
-		{"zero rejected", intp(0), ErrRatingOutOfRange},
-		{"six rejected", intp(6), ErrRatingOutOfRange},
-		{"negative rejected", intp(-3), ErrRatingOutOfRange},
+		{"overall 5", &frontmatter.Rating{Overall: fp(5)}, nil},
+		{"overall 10 (bumped)", &frontmatter.Rating{Overall: fp(10)}, nil},
+		{"overall -1 rejected", &frontmatter.Rating{Overall: fp(-1)}, ErrRatingOverallRange},
+		{"overall 11 rejected", &frontmatter.Rating{Overall: fp(11)}, ErrRatingOverallRange},
+		{"all axes set", &frontmatter.Rating{TrialSystem: map[string]int{
+			"emotional_impact": 5, "characters": 4, "plot": 5,
+			"dialogue_prose": 3, "cinematography_worldbuilding": 5,
+		}}, nil},
+		{"negative axis rejected", &frontmatter.Rating{TrialSystem: map[string]int{
+			"plot": -1,
+		}}, ErrRatingAxisNegative},
 	}
 	for _, tc := range cases {
 		if got := ValidateRating(tc.in); !errors.Is(got, tc.err) {

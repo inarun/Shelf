@@ -41,13 +41,34 @@
         {{end}}
 
         <h2>Rating</h2>
-        <fieldset class="rating-widget" data-rating-widget data-filename="{{.Book.Filename}}">
-          <legend class="sr-only">Star rating</legend>
-          {{range $i := .RatingRange}}
-            <button type="button" class="rating-star" data-rating="{{$i}}" aria-pressed="{{if $.Book.Rating}}{{if le $i (deref $.Book.Rating)}}true{{else}}false{{end}}{{else}}false{{end}}" aria-label="{{$i}} star{{pluralS $i}}">
-              <svg class="icon icon-star" aria-hidden="true" focusable="false"><use href="#icon-star-filled"/></svg>
-            </button>
+        <fieldset class="rating-grid" data-rating-grid data-filename="{{.Book.Filename}}">
+          <legend class="sr-only">Trial System rating</legend>
+          {{range $axis := .RatingAxes}}
+            <fieldset class="rating-axis" data-axis="{{$axis.Key}}">
+              <legend>{{$axis.Label}}</legend>
+              <div class="rating-axis-stars">
+                {{range $i := $axis.Stars}}
+                  <button type="button" class="rating-star" data-rating="{{$i}}" aria-pressed="{{if and (gt $axis.SelectedValue 0) (le $i $axis.SelectedValue)}}true{{else}}false{{end}}" aria-label="{{$i}} for {{$axis.Label}}">
+                    <svg class="icon icon-star" aria-hidden="true" focusable="false"><use href="#icon-star-filled"/></svg>
+                  </button>
+                {{end}}
+              </div>
+              <button type="button" class="rating-bump" data-bump aria-label="Bump {{$axis.Label}} above 5">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"/></svg>
+              </button>
+            </fieldset>
           {{end}}
+          <div class="rating-overall">
+            <output data-overall-output aria-live="polite">Overall: {{.OverallDisplay}}/5</output>
+            <label class="rating-override-toggle">
+              <input type="checkbox" data-override-checkbox{{if and .Book.Rating .Book.Rating.HasOverride}} checked{{end}}>
+              Override overall
+            </label>
+            <label class="rating-override-value">
+              <span class="sr-only">Override value</span>
+              <input type="number" min="0" max="10" step="0.1" data-override-input value="{{.OverrideValue}}"{{if not (and .Book.Rating .Book.Rating.HasOverride)}} disabled{{end}}>
+            </label>
+          </div>
         </fieldset>
 
         <h2>Status</h2>

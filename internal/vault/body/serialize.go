@@ -28,10 +28,20 @@ func (b *Body) Serialize() []byte {
 // contain mixed endings in the dirty region. This is accepted for v0.1
 // because recognized-section regeneration is app output, while user-
 // authored (clean) bytes remain untouched.
+//
+// A Rating block cannot be regenerated in isolation because its heading
+// displays the frontmatter-derived overall score. Callers that mutate a
+// Rating block must call (b *Body).Serialize with a prior
+// SetRatingFromFrontmatter, which also stamps the effective overall on
+// the block so the regenerate path can read it back.
 func regenerate(bl Block) []byte {
 	switch bl.Kind {
 	case KindH1:
 		return regenerateH1(bl.Parsed.(*H1Parsed))
+	case KindRating:
+		// The overall display is recomputed at Serialize time from the
+		// axis values and the stamped override. See (b *Body).Serialize.
+		return regenerateRating(bl.Parsed.(*RatingParsed), ratingEffectiveFor(bl))
 	case KindNotes, KindQuotes:
 		return regenerateText(bl.Kind, bl.Parsed.(*TextParsed))
 	case KindKeyIdeas, KindActions, KindRelated:
@@ -43,12 +53,34 @@ func regenerate(bl Block) []byte {
 	}
 }
 
+// ratingEffectiveFor computes the overall score from a dirty Rating
+// block's axis values. The override (if any) lives on
+// RatingParsed.OverrideOverall, stamped by SetRatingFromFrontmatter.
+func ratingEffectiveFor(bl Block) float64 {
+	p, ok := bl.Parsed.(*RatingParsed)
+	if !ok || p == nil {
+		return 0
+	}
+	if p.OverrideOverall != nil {
+		return *p.OverrideOverall
+	}
+	if len(p.Values) == 0 {
+		return 0
+	}
+	sum := 0
+	for _, v := range p.Values {
+		sum += v
+	}
+	return float64(sum) / float64(len(p.Values))
+}
+
+// regenerateH1 emits just the H1 title line (post-v0.2.1). The legacy
+// `Rating — N/5` line is no longer produced; any such line in an
+// unmodified H1 block survives round-trip because clean blocks emit Raw
+// bytes verbatim.
 func regenerateH1(p *H1Parsed) []byte {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "# %s\n", p.Title)
-	if p.Rating != nil {
-		fmt.Fprintf(&buf, "\nRating — %d/5\n", *p.Rating)
-	}
 	buf.WriteString("\n")
 	return buf.Bytes()
 }
@@ -142,6 +174,8 @@ func (b *Body) EnsureSection(kind Kind) {
 
 func emptyParsedFor(kind Kind) any {
 	switch kind {
+	case KindRating:
+		return &RatingParsed{Values: map[string]int{}}
 	case KindNotes, KindQuotes:
 		return &TextParsed{}
 	case KindKeyIdeas, KindActions, KindRelated:
@@ -160,37 +194,6 @@ func (b *Body) indexOf(kind Kind) int {
 		}
 	}
 	return -1
-}
-
-// SetRating mutates the H1 block's Rating value. If no H1 block exists,
-// one is created with an empty title (caller can then SetTitle). Accepts
-// nil to clear the rating.
-func (b *Body) SetRating(r *int) error {
-	if r != nil && (*r < 1 || *r > 5) {
-		return fmt.Errorf("body: rating %d out of range 1..5", *r)
-	}
-	idx := b.indexOf(KindH1)
-	if idx < 0 {
-		b.Blocks = append([]Block{{
-			Kind:   KindH1,
-			Parsed: &H1Parsed{Rating: r},
-			dirty:  true,
-		}}, b.Blocks...)
-		return nil
-	}
-	bl := &b.Blocks[idx]
-	if bl.Parsed == nil {
-		bl.Parsed = &H1Parsed{}
-	}
-	p := bl.Parsed.(*H1Parsed)
-	if r == nil {
-		p.Rating = nil
-	} else {
-		val := *r
-		p.Rating = &val
-	}
-	bl.dirty = true
-	return nil
 }
 
 // SetTitle mutates the H1 block's title. Creates an H1 block when none

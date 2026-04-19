@@ -16,6 +16,7 @@ import (
 
 	"github.com/inarun/Shelf/internal/index/store"
 	sync_ "github.com/inarun/Shelf/internal/index/sync"
+	"github.com/inarun/Shelf/internal/vault/frontmatter"
 	"github.com/inarun/Shelf/internal/vault/note"
 	"github.com/inarun/Shelf/internal/vault/watcher"
 )
@@ -79,8 +80,8 @@ func TestRoundTrip_ReadMutateWriteIsByteStable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := 5
-	if err := n.Frontmatter.SetRating(&r); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.SaveFrontmatter(); err != nil {
@@ -91,14 +92,19 @@ func TestRoundTrip_ReadMutateWriteIsByteStable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The body and every untouched frontmatter field must be byte-
-	// identical — only the rating line changed.
-	changed := diffLines(hyperion, string(got))
-	if len(changed) != 1 {
-		t.Fatalf("expected exactly 1 changed line, got %d:\n%s", len(changed), strings.Join(changed, "\n"))
+	// The body must be byte-identical; the frontmatter rating region
+	// switches shape (scalar → map) so we check key properties instead
+	// of demanding exactly one changed line.
+	if !strings.Contains(string(got), "overall: 5") {
+		t.Errorf("frontmatter didn't pick up new rating:\n%s", got)
 	}
-	if !strings.Contains(changed[0], "rating") {
-		t.Errorf("changed line is not the rating: %q", changed[0])
+	if strings.Contains(string(got), "rating: 3") {
+		t.Errorf("old scalar rating still present:\n%s", got)
+	}
+	// Body untouched — the legacy H1 "Rating — 3/5" line still there
+	// because we didn't mutate the body.
+	if !strings.Contains(string(got), "Rating — 3/5") {
+		t.Errorf("body modified unexpectedly:\n%s", got)
 	}
 	if !bytes.Contains(got, []byte("## Reading Timeline")) {
 		t.Errorf("body lost after SaveFrontmatter:\n%s", got)
@@ -198,10 +204,11 @@ func TestConcurrentBodyEdit_RefusesSave(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := 5
-	if err := n.Body.SetRating(&r); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
+	n.Body.SetRatingFromFrontmatter(n.Frontmatter.Rating())
 	err = n.SaveBody()
 	if !errors.Is(err, note.ErrStale) {
 		t.Errorf("expected ErrStale, got %v", err)
@@ -226,8 +233,8 @@ func TestConcurrentBodyEdit_FrontmatterWriteStillSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := 5
-	if err := n.Frontmatter.SetRating(&r); err != nil {
+	over := 5.0
+	if err := n.Frontmatter.SetRating(&frontmatter.Rating{Overall: &over}); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.SaveFrontmatter(); err != nil {
@@ -237,7 +244,7 @@ func TestConcurrentBodyEdit_FrontmatterWriteStillSucceeds(t *testing.T) {
 	if !bytes.Contains(got, []byte("EXTERNALLY EDITED NOTES.")) {
 		t.Errorf("external body edit clobbered:\n%s", got)
 	}
-	if !bytes.Contains(got, []byte("rating: 5")) {
+	if !bytes.Contains(got, []byte("overall: 5")) {
 		t.Errorf("app rating not applied:\n%s", got)
 	}
 }
@@ -272,28 +279,3 @@ func TestWatcher_DrivesSync(t *testing.T) {
 	}
 }
 
-// diffLines returns the lines whose values differ between a and b at the
-// same index. Matches the helper in internal/vault/frontmatter so tests
-// here can format "only rating changed" assertions consistently.
-func diffLines(a, b string) []string {
-	al := strings.Split(a, "\n")
-	bl := strings.Split(b, "\n")
-	max := len(al)
-	if len(bl) > max {
-		max = len(bl)
-	}
-	var out []string
-	for i := 0; i < max; i++ {
-		var av, bv string
-		if i < len(al) {
-			av = al[i]
-		}
-		if i < len(bl) {
-			bv = bl[i]
-		}
-		if av != bv {
-			out = append(out, "- "+av+"\n+ "+bv)
-		}
-	}
-	return out
-}

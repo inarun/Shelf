@@ -87,55 +87,238 @@
     }, ms);
   }
 
-  function initRating(widget) {
-    const filename = widget.getAttribute("data-filename");
-    const buttons = widget.querySelectorAll("button[data-rating]");
+  // initRatingGrid wires the five-axis Trial-System rating widget on
+  // the book-detail page. Behavior:
+  //   - Star click: paint 1..N as pressed on the clicked axis (or
+  //     clear if the user clicks the already-pressed max star).
+  //   - "+" bump: append a star button at position N+1 and select it,
+  //     letting axis values grow above 5.
+  //   - Override checkbox: enables/disables the override input and
+  //     includes or omits `overall` in the PATCH payload.
+  //   - Override input: lets the user set an explicit 0..10 overall.
+  //   - Overall display updates live via the aria-live="polite" output.
+  //   - Save is debounced (200 ms trailing) so rapid edits coalesce
+  //     into a single PATCH with the full rating state.
+  //   - On 409 (stale note), the page soft-reloads after a toast —
+  //     the user's click is lost, but they immediately see fresh state.
+  function initRatingGrid(grid) {
+    const filename = grid.getAttribute("data-filename");
+    const overallOutput = grid.querySelector("[data-overall-output]");
+    const overrideCheckbox = grid.querySelector("[data-override-checkbox]");
+    const overrideInput = grid.querySelector("[data-override-input]");
 
-    // paint flips aria-pressed on every button so stars 1..val are "on".
-    // Passing null clears — used both for optimistic apply and rollback.
-    function paint(val) {
-      buttons.forEach((b) => {
-        const v = parseInt(b.getAttribute("data-rating"), 10);
-        b.setAttribute("aria-pressed", val !== null && v <= val ? "true" : "false");
-      });
-    }
+    function axisEls() { return grid.querySelectorAll(".rating-axis"); }
 
-    function currentVal() {
+    function axisMax(axEl) {
       let max = 0;
-      buttons.forEach((b) => {
+      axEl.querySelectorAll("button[data-rating]").forEach((b) => {
         if (b.getAttribute("aria-pressed") === "true") {
           const v = parseInt(b.getAttribute("data-rating"), 10);
           if (Number.isFinite(v) && v > max) max = v;
         }
       });
-      return max > 0 ? max : null;
+      return max;
     }
 
-    buttons.forEach((btn) => {
-      btn.addEventListener("click", () => withBusy(btn, async () => {
-        const val = parseInt(btn.getAttribute("data-rating"), 10);
+    function paintAxis(axEl, val) {
+      axEl.querySelectorAll("button[data-rating]").forEach((b) => {
+        const v = parseInt(b.getAttribute("data-rating"), 10);
+        b.setAttribute("aria-pressed", val > 0 && v <= val ? "true" : "false");
+      });
+    }
+
+    function readState() {
+      const trial = {};
+      axisEls().forEach((ax) => {
+        const key = ax.getAttribute("data-axis");
+        const v = axisMax(ax);
+        if (v > 0) trial[key] = v;
+      });
+      const hasOverride = overrideCheckbox && overrideCheckbox.checked;
+      let overall = null;
+      if (hasOverride && overrideInput && overrideInput.value !== "") {
+        const parsed = parseFloat(overrideInput.value);
+        if (Number.isFinite(parsed)) overall = parsed;
+      }
+      return { trial_system: trial, overall };
+    }
+
+    function computeEffective(state) {
+      if (state.overall !== null) return state.overall;
+      const vals = Object.values(state.trial_system);
+      if (vals.length === 0) return null;
+      let sum = 0;
+      vals.forEach((v) => { sum += v; });
+      return sum / vals.length;
+    }
+
+    function formatOverall(v) {
+      if (v === null) return "—";
+      const rounded = Math.round(v * 10) / 10;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    }
+
+    function updateOverallDisplay() {
+      if (!overallOutput) return;
+      const s = readState();
+      overallOutput.textContent = "Overall: " + formatOverall(computeEffective(s)) + "/5";
+    }
+
+    function makeStarButton(n, axisLabel) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rating-star";
+      btn.setAttribute("data-rating", String(n));
+      btn.setAttribute("aria-pressed", "true");
+      btn.setAttribute("aria-label", n + " for " + axisLabel);
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "icon icon-star");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", "#icon-star-filled");
+      svg.appendChild(use);
+      btn.appendChild(svg);
+      return btn;
+    }
+
+    // Debounced save: one PATCH per trailing 200ms window carries the
+    // full rating state. Rollback snapshot is captured before the wait.
+    let saveTimer = null;
+    let pendingSnapshot = null;
+    function snapshotGrid() {
+      const snap = [];
+      axisEls().forEach((ax) => {
+        const btns = Array.from(ax.querySelectorAll("button[data-rating]"))
+          .map((b) => ({
+            rating: b.getAttribute("data-rating"),
+            pressed: b.getAttribute("aria-pressed"),
+            label: b.getAttribute("aria-label"),
+          }));
+        snap.push({ key: ax.getAttribute("data-axis"), buttons: btns });
+      });
+      return {
+        axes: snap,
+        overrideChecked: overrideCheckbox ? overrideCheckbox.checked : false,
+        overrideValue: overrideInput ? overrideInput.value : "",
+        overrideDisabled: overrideInput ? overrideInput.disabled : true,
+      };
+    }
+    function restoreGrid(snap) {
+      if (!snap) return;
+      snap.axes.forEach((axSnap, i) => {
+        const ax = axisEls()[i];
+        if (!ax) return;
+        const stars = ax.querySelector(".rating-axis-stars");
+        if (!stars) return;
+        // Re-render to match exactly what the snapshot held.
+        stars.textContent = "";
+        const legendEl = ax.querySelector("legend");
+        const axisLabel = legendEl ? legendEl.textContent : "";
+        axSnap.buttons.forEach((bs) => {
+          const n = parseInt(bs.rating, 10);
+          const btn = makeStarButton(n, axisLabel);
+          btn.setAttribute("aria-pressed", bs.pressed);
+          if (bs.label) btn.setAttribute("aria-label", bs.label);
+          stars.appendChild(btn);
+        });
+      });
+      if (overrideCheckbox) overrideCheckbox.checked = snap.overrideChecked;
+      if (overrideInput) {
+        overrideInput.value = snap.overrideValue;
+        overrideInput.disabled = snap.overrideDisabled;
+      }
+      updateOverallDisplay();
+    }
+
+    function scheduleSave() {
+      if (!pendingSnapshot) pendingSnapshot = snapshotGrid();
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(doSave, 200);
+    }
+
+    async function doSave() {
+      saveTimer = null;
+      const snap = pendingSnapshot;
+      pendingSnapshot = null;
+      const state = readState();
+      const payload = Object.keys(state.trial_system).length === 0 && state.overall === null
+        ? { rating: null }
+        : { rating: { trial_system: state.trial_system, overall: state.overall } };
+      const resp = await api(
+        "PATCH",
+        "/api/books/" + encodeURIComponent(filename),
+        payload,
+      );
+      if (resp.ok) {
+        toast("ok", payload.rating === null ? "Rating cleared" : "Rating saved");
+        return;
+      }
+      if (resp.status === 409) {
+        toast("warn", "This note changed outside Shelf — reloading.");
+        setTimeout(() => window.location.reload(), 600);
+        return;
+      }
+      restoreGrid(snap);
+      toast("error", errorText(resp.data, "Could not save rating."));
+    }
+
+    // Event delegation: one listener covers all existing and
+    // dynamically-added star buttons, the "+" bump buttons, and the
+    // override controls.
+    grid.addEventListener("click", (e) => {
+      const star = e.target.closest("button[data-rating]");
+      if (star) {
+        const ax = star.closest(".rating-axis");
+        if (!ax) return;
+        const val = parseInt(star.getAttribute("data-rating"), 10);
         if (!Number.isFinite(val)) return;
-        const prev = currentVal();
-        const next = btn.getAttribute("aria-pressed") === "true" ? null : val;
-        // Optimistic: flip the UI immediately so clicks feel instant.
-        paint(next);
-        const resp = await api(
-          "PATCH",
-          "/api/books/" + encodeURIComponent(filename),
-          { rating: next },
-        );
-        if (resp.ok) {
-          toast("ok", next === null ? "Rating cleared" : "Rated " + next + (next === 1 ? " star" : " stars"));
-        } else {
-          paint(prev);  // revert
-          if (resp.status === 409) {
-            toast("warn", errorText(resp.data, "This note changed outside Shelf. Reload and try again."));
-          } else {
-            toast("error", errorText(resp.data, "Could not save rating."));
-          }
+        const currentMax = axisMax(ax);
+        const next = star.getAttribute("aria-pressed") === "true" && val === currentMax
+          ? 0
+          : val;
+        paintAxis(ax, next);
+        updateOverallDisplay();
+        scheduleSave();
+        return;
+      }
+      const bump = e.target.closest("button[data-bump]");
+      if (bump) {
+        const ax = bump.closest(".rating-axis");
+        if (!ax) return;
+        const stars = ax.querySelector(".rating-axis-stars");
+        if (!stars) return;
+        const next = axisMax(ax) + 1;
+        const legendEl = ax.querySelector("legend");
+        const axisLabel = legendEl ? legendEl.textContent : "";
+        // Ensure every position 1..next has a button (user may click
+        // "+" on an unrated axis — fill from 1 up to the new max).
+        for (let n = stars.querySelectorAll("button[data-rating]").length + 1; n <= next; n++) {
+          stars.appendChild(makeStarButton(n, axisLabel));
         }
-      }));
+        paintAxis(ax, next);
+        updateOverallDisplay();
+        scheduleSave();
+      }
     });
+
+    if (overrideCheckbox) {
+      overrideCheckbox.addEventListener("change", () => {
+        const on = overrideCheckbox.checked;
+        if (overrideInput) {
+          overrideInput.disabled = !on;
+          if (!on) overrideInput.value = "";
+        }
+        updateOverallDisplay();
+        scheduleSave();
+      });
+    }
+    if (overrideInput) {
+      overrideInput.addEventListener("input", () => {
+        updateOverallDisplay();
+        scheduleSave();
+      });
+    }
   }
 
   function initStatus(el) {
@@ -963,7 +1146,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll("[data-rating-widget]").forEach(initRating);
+    document.querySelectorAll("[data-rating-grid]").forEach(initRatingGrid);
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
     document.querySelectorAll("[data-review-form]").forEach(initReview);
     initImport();

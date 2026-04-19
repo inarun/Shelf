@@ -70,6 +70,36 @@
         <p class="empty-state__body">Mark a book as <code>finished</code> to start the per-year breakdown.</p>
       </div>
     {{end}}
+
+    <h2>Rating distribution</h2>
+    {{if .RatedAny}}
+      <table class="stats-table stats-ratings">
+        <caption class="sr-only">Books per rating bucket</caption>
+        <thead><tr><th>Rating</th><th>Books</th></tr></thead>
+        <tbody>
+          {{$max := .MaxRatingBucket}}
+          {{range $i, $n := .Summary.RatingHistogram}}
+            {{if gt $i 0}}
+              <tr>
+                <th scope="row">{{$i}}★</th>
+                <td>
+                  <div class="bar-row">
+                    <span class="bar-count">{{$n}}</span>
+                    <span class="bar {{barWidthClass $n $max}}"></span>
+                  </div>
+                </td>
+              </tr>
+            {{end}}
+          {{end}}
+        </tbody>
+      </table>
+    {{else}}
+      <div class="empty-state">
+        <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-chart"/></svg>
+        <p class="empty-state__title">No rated books yet</p>
+        <p class="empty-state__body">Rate a book on its detail page to start the distribution chart.</p>
+      </div>
+    {{end}}
   </main>
   {{template "scripts" .}}
 </body>
