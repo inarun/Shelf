@@ -188,6 +188,7 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		Metadata:             olClient,
 		Covers:               coverCache,
 		AudiobookshelfClient: abClient,
+		RecommenderEnabled:   cfg.Recommender.Enabled,
 		BooksAbs:             booksAbs,
 		BackupsRoot:          backupsRoot,
 		DataDir:              cfg.Data.Directory,

@@ -5,10 +5,11 @@ import "path/filepath"
 // Config is the complete TOML configuration for Shelf. Fields omitted in
 // the TOML receive defaults during Load.
 type Config struct {
-	Vault     VaultConfig     `toml:"vault"`
-	Data      DataConfig      `toml:"data"`
-	Server    ServerConfig    `toml:"server"`
-	Providers ProvidersConfig `toml:"providers"`
+	Vault       VaultConfig       `toml:"vault"`
+	Data        DataConfig        `toml:"data"`
+	Server      ServerConfig      `toml:"server"`
+	Providers   ProvidersConfig   `toml:"providers"`
+	Recommender RecommenderConfig `toml:"recommender"`
 }
 
 // VaultConfig points at the user's Obsidian vault and the Books subfolder.
@@ -55,6 +56,15 @@ type AudiobookshelfConfig struct {
 	BaseURL         string `toml:"base_url"`
 	APIKey          string `toml:"api_key"`
 	CacheTTLMinutes int    `toml:"cache_ttl_minutes"`
+}
+
+// RecommenderConfig controls the rule-based recommender (v0.3). Enabled
+// is false by default so the debug endpoint /api/recommendations/profile
+// returns 503 for users who have not opted in. The scorers themselves
+// land in Session 18 and are gated on the same flag; the v0.3 UI arrives
+// in Session 19. Purely a local computation — no outbound HTTP.
+type RecommenderConfig struct {
+	Enabled bool `toml:"enabled"`
 }
 
 // BooksAbsolutePath joins Vault.Path and Vault.BooksFolder into an absolute

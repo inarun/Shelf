@@ -32,6 +32,7 @@ type Dependencies struct {
 	Metadata             metadata.Provider
 	Covers               *covers.Cache
 	AudiobookshelfClient *audiobookshelf.Client
+	RecommenderEnabled   bool
 	BooksAbs             string
 	BackupsRoot          string
 	DataDir              string
@@ -69,6 +70,7 @@ func New(deps Dependencies) (*Server, error) {
 		Metadata:             deps.Metadata,
 		Covers:               deps.Covers,
 		AudiobookshelfClient: deps.AudiobookshelfClient,
+		RecommenderEnabled:   deps.RecommenderEnabled,
 		BooksAbs:             deps.BooksAbs,
 		BackupsRoot:          deps.BackupsRoot,
 		DataDir:              deps.DataDir,

@@ -30,6 +30,7 @@ type Dependencies struct {
 	Metadata             metadata.Provider
 	Covers               *covers.Cache
 	AudiobookshelfClient *audiobookshelf.Client
+	RecommenderEnabled   bool
 	BooksAbs             string
 	BackupsRoot          string
 	DataDir              string
