@@ -7,13 +7,21 @@
 </head>
 <body data-request-id="{{.RequestID}}">
   {{template "nav" .}}
-  <main>
+  <main id="main">
     <p><a href="/series">&larr; All series</a></p>
     <h1>{{.Series.Name}}</h1>
     <p class="muted">{{.Series.Finished}} of {{.Series.BookCount}} finished</p>
-    <div class="book-grid">
-      {{range .Series.Books}}{{template "bookCard" .}}{{end}}
-    </div>
+    {{if .Series.Books}}
+      <div class="book-grid">
+        {{range .Series.Books}}{{template "bookCard" .}}{{end}}
+      </div>
+    {{else}}
+      <div class="empty-state">
+        <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-shelf"/></svg>
+        <p class="empty-state__title">No books in this series yet</p>
+        <p class="empty-state__body">Books with <code>series: {{.Series.Name}}</code> in their frontmatter will appear here.</p>
+      </div>
+    {{end}}
   </main>
   {{template "scripts" .}}
 </body>

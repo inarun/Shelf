@@ -7,21 +7,20 @@
 </head>
 <body data-request-id="{{.RequestID}}">
   {{template "nav" .}}
-  <main>
+  <main id="main">
     <h1>Library</h1>
     <p class="muted">{{len .Books}} book{{pluralS (len .Books)}}{{if .Filter.Status}} — filtered by status: <code>{{.Filter.Status}}</code>{{end}}</p>
 
     <form class="filter-bar" method="get" action="/library">
-      <label>Status:
-        <select name="status">
-          <option value="" {{if eq .Filter.Status ""}}selected{{end}}>all</option>
-          <option value="unread"   {{if eq .Filter.Status "unread"}}selected{{end}}>unread</option>
-          <option value="reading"  {{if eq .Filter.Status "reading"}}selected{{end}}>reading</option>
-          <option value="paused"   {{if eq .Filter.Status "paused"}}selected{{end}}>paused</option>
-          <option value="finished" {{if eq .Filter.Status "finished"}}selected{{end}}>finished</option>
-          <option value="dnf"      {{if eq .Filter.Status "dnf"}}selected{{end}}>dnf</option>
-        </select>
-      </label>
+      <label for="status-filter">Status</label>
+      <select id="status-filter" name="status">
+        <option value="" {{if eq .Filter.Status ""}}selected{{end}}>all</option>
+        <option value="unread"   {{if eq .Filter.Status "unread"}}selected{{end}}>unread</option>
+        <option value="reading"  {{if eq .Filter.Status "reading"}}selected{{end}}>reading</option>
+        <option value="paused"   {{if eq .Filter.Status "paused"}}selected{{end}}>paused</option>
+        <option value="finished" {{if eq .Filter.Status "finished"}}selected{{end}}>finished</option>
+        <option value="dnf"      {{if eq .Filter.Status "dnf"}}selected{{end}}>dnf</option>
+      </select>
       <button type="submit" class="primary">Filter</button>
       {{if .Filter.Status}}<a href="/library">Clear</a>{{end}}
     </form>
@@ -31,7 +30,11 @@
         {{range .Books}}{{template "bookCard" .}}{{end}}
       </div>
     {{else}}
-      <p><em>No books in the index yet. Drop some <code>.md</code> files into your Books folder, or run an import.</em></p>
+      <div class="empty-state">
+        <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-shelf"/></svg>
+        <p class="empty-state__title">Your shelf is empty</p>
+        <p class="empty-state__body">Drop some <code>.md</code> files into your Books folder, or run a <a href="/import">Goodreads import</a> to get started.</p>
+      </div>
     {{end}}
   </main>
   {{template "scripts" .}}

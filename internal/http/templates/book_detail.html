@@ -7,7 +7,7 @@
 </head>
 <body data-request-id="{{.RequestID}}">
   {{template "nav" .}}
-  <main>
+  <main id="main">
     <p><a href="/library">&larr; Library</a></p>
     <article class="book-detail" data-filename="{{.Book.Filename}}">
       <aside>
@@ -41,13 +41,14 @@
         {{end}}
 
         <h2>Rating</h2>
-        <div class="rating-widget" data-rating-widget data-filename="{{.Book.Filename}}" role="group" aria-label="Star rating">
+        <fieldset class="rating-widget" data-rating-widget data-filename="{{.Book.Filename}}">
+          <legend class="sr-only">Star rating</legend>
           {{range $i := .RatingRange}}
             <button type="button" class="rating-star" data-rating="{{$i}}" aria-pressed="{{if $.Book.Rating}}{{if le $i (deref $.Book.Rating)}}true{{else}}false{{end}}{{else}}false{{end}}" aria-label="{{$i}} star{{pluralS $i}}">
               <svg class="icon icon-star" aria-hidden="true" focusable="false"><use href="#icon-star-filled"/></svg>
             </button>
           {{end}}
-        </div>
+        </fieldset>
 
         <h2>Status</h2>
         <div data-status-select data-filename="{{.Book.Filename}}">
@@ -75,7 +76,11 @@
               {{range .Book.TimelineLines}}<li>{{.}}</li>{{end}}
             </ul>
           {{else}}
-            <p class="muted"><em>No timeline entries yet.</em></p>
+            <div class="empty-state">
+              <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-timeline"/></svg>
+              <p class="empty-state__title">No timeline entries yet</p>
+              <p class="empty-state__body">Changing status to <code>reading</code> or <code>finished</code> stamps the date here automatically.</p>
+            </div>
           {{end}}
         </section>
       </section>

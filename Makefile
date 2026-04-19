@@ -13,7 +13,7 @@ STATICCHECK  := honnef.co/go/tools/cmd/staticcheck@v0.7.0
 GOSEC        := github.com/securego/gosec/v2/cmd/gosec@latest
 GOVULNCHECK  := golang.org/x/vuln/cmd/govulncheck@latest
 
-.PHONY: all build test vet staticcheck gosec govulncheck lint-all fmt tidy clean update update-check
+.PHONY: all build test vet staticcheck gosec govulncheck lint-all fmt tidy clean update update-check a11y
 
 all: lint-all test build
 
@@ -68,3 +68,10 @@ tidy:
 
 clean:
 	rm -f $(BIN_EXE) coverage.*
+
+# Dev-local contrast audit: parses app.css design tokens and reports
+# WCAG 2.2 AA pass/fail for curated UI-used (fg, bg) pairs plus a
+# full-matrix audit. Not wired into `all`; run manually when palette
+# changes. `cmd/a11y-check/main.go` is //go:build ignore so lints skip it.
+a11y:
+	$(GO) run cmd/a11y-check/main.go

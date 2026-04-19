@@ -24,7 +24,10 @@
   --success: #16a34a;
   --warn: #d97706;
   --danger: #dc2626;
-  --star: #eab308;
+  /* Star deepened from #eab308 → #a16207 in Session 9 so filled stars
+     pass WCAG 2.2 AA non-text contrast (≥3:1) on both --bg (#ffffff)
+     and --surface (#fafafa). Dark-mode --star is bright enough already. */
+  --star: #a16207;
 
   /* Spacing — 4px base */
   --space-1: 4px;
@@ -143,6 +146,31 @@ code, .mono {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+
+/* ===== Skip-to-content link =====
+   First focusable element on every page. Positioned off-screen until it
+   receives keyboard focus, then snaps to the top-left with an accent
+   background. Pressing Enter jumps focus to <main id="main">, bypassing
+   the nav for keyboard and screen-reader users. */
+.skip-link {
+  position: absolute;
+  left: 0;
+  top: -999px;
+  z-index: 100;
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: 0 0 var(--radius-md) 0;
+  transition: top var(--motion-fast) var(--ease-out);
+}
+.skip-link:focus-visible {
+  top: 0;
+  outline: 2px solid var(--accent-fg);
+  outline-offset: -4px;
+}
+.skip-link:hover { color: var(--accent-fg); }
 
 /* ===== Layout ===== */
 header.site {
@@ -439,21 +467,30 @@ textarea { resize: vertical; }
 .book-detail dd { margin: 0; color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
 
 /* ===== Rating widget — star icon buttons =====
-   One filled-star SVG per button. Color is driven by currentColor so a
-   single CSS rule maps aria-pressed / hover to the visual state without
-   swapping icons: unrated = var(--border-strong) (outlined-looking fill),
-   hovered or pressed = var(--star). */
+   A <fieldset> with an sr-only <legend> groups the five star buttons so
+   screen readers announce "Star rating" before the radio-like buttons.
+   The <h2>Rating</h2> above stays so the page heading outline is intact.
+   Color is driven by currentColor so a single CSS rule maps aria-pressed /
+   hover to the visual state without swapping icons: unrated =
+   var(--border-strong) (outlined-looking fill), hovered or pressed =
+   var(--star). Fieldset default chrome (border, padding, margin, min-width)
+   is neutralized so the widget lays out like any other flex row. */
 .rating-widget {
   display: flex;
   gap: var(--space-1);
   align-items: center;
-  margin-top: var(--space-1);
+  margin: var(--space-1) 0 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
 }
 
 .rating-widget button.rating-star {
   background: transparent;
   border: 1px solid transparent;
-  color: var(--border-strong);
+  /* Unfilled star uses --muted for WCAG 2.2 AA non-text contrast
+     against --surface (book cards / detail) and --bg alike. */
+  color: var(--muted);
   border-radius: var(--radius-sm);
   padding: var(--space-1);
   line-height: 0;
@@ -633,6 +670,54 @@ textarea { resize: vertical; }
 }
 
 .muted { color: var(--muted); }
+
+/* ===== Empty state =====
+   Used wherever a collection is empty (library/series/stats/timeline).
+   Illustration comes from an <svg><use href="#icon-empty-..."/></svg>
+   symbol in the sprite. currentColor inherits from the container's
+   muted palette so the illustration reads as decorative, not alarming. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-7) var(--space-4);
+  color: var(--muted);
+  gap: var(--space-2);
+}
+
+.empty-state__icon {
+  width: 64px;
+  height: 64px;
+  /* var(--muted) instead of --border-strong so the illustration clears
+     WCAG 2.2 AA non-text contrast (≥3:1) on every surface. */
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.empty-state__title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  letter-spacing: -0.005em;
+  margin: var(--space-2) 0 0;
+}
+
+.empty-state__body {
+  font-size: 0.9rem;
+  max-width: 32rem;
+  margin: 0 auto;
+  color: var(--muted);
+}
+
+.empty-state__body code {
+  background: var(--surface-elev);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: 0.85em;
+}
 
 /* ===== Covers ===== */
 .book-cover {

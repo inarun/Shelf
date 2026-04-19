@@ -2,7 +2,7 @@
 
 **Authoritative spec for the Shelf project.** Load this file at the start of every Claude Code session. Every architectural decision, filename, schema, and rule in this document is binding. If a user request contradicts this document, raise the contradiction and ask before proceeding.
 
-Last updated: 2026-04-18 (Session 8 complete — inline SVG icon sprite, star-rating widget, keyboard shortcuts)
+Last updated: 2026-04-18 (Session 9 complete — empty states, skip-link, rating fieldset, bar animation, contrast audit tool)
 
 ---
 
@@ -440,11 +440,18 @@ Session 8 (icons + interaction) — **complete as of 2026-04-18**:
 - `sw.js` `CACHE_VERSION` bumped `shelf-v2 → shelf-v3` so returning clients pick up the new sprite + JS bundle on next activation.
 - Regression guards in `templates_test.go`: `TestNavEmitsIconSpriteAndHelpOverlay` asserts that `nav` renders the star/keyboard/x symbols plus the `#kbd-help` dialog shell on every page; `TestBookDetailRatingUsesStarIcons` asserts that rating buttons carry `class="rating-star"`, a `#icon-star-filled` `<use>`, and pluralized `aria-label`s. `TestNoInlineStyleAttributesInTemplates` continues to fail the build on any regression to `style=""`.
 
-Session 9 (empty states + a11y):
-- Empty-state designs with inline SVG illustrations for library, series, stats, and timeline sections
-- Bar-chart width-in animation (`requestAnimationFrame`-gated, respects `prefers-reduced-motion`)
-- Full `axe-core` a11y audit (run via in-page console snippet, no dependency install); fix all findings including fieldset+legend on rating, `<label>` density, skip-to-content link
-- Contrast verification tool at `cmd/a11y-check/main.go` (build tag `ignore`) — parses `--*` custom properties from app.css and reports WCAG 2.2 AA pass/fail for every (fg, bg) pair
+Session 9 (empty states + a11y) — **complete as of 2026-04-18**:
+- Three new sprite symbols in `internal/http/templates/_sprite.html` — `icon-empty-shelf`, `icon-empty-chart`, `icon-empty-timeline` (64×64, stroke-based, inherit `currentColor`) drive illustrated empty-state components across `library.html`, `series_list.html`, `series_detail.html` (new empty branch), `stats.html` (per-year table), and `book_detail.html` (Reading timeline). The `.empty-state` component (icon + title + body) replaces the bare `<p><em>…</em></p>` paragraphs; icon colour is `var(--muted)` so illustrations clear WCAG 2.2 AA non-text contrast (≥3:1) on every surface.
+- Skip-to-content link is the first focusable element on every page — `<a class="skip-link" href="#main">Skip to main content</a>` injected at the top of `{{define "nav"}}` in `_shared.html`, paired with `id="main"` on every page template's `<main>` (library, series_list, series_detail, stats, book_detail, add, import, error). CSS positions the link off-screen until `:focus-visible`.
+- Rating widget upgraded from `<div role="group" aria-label="Star rating">` to `<fieldset class="rating-widget"><legend class="sr-only">Star rating</legend>…</fieldset>`. The `<h2>Rating</h2>` heading stays so the heading outline (screen-reader `H`-key navigation) is intact; the `<legend>` is visually hidden. Fieldset default chrome (border, padding, margin, `min-width`) neutralized so the widget lays out like any other flex row.
+- Explicit `<label for="id">` bindings on every form control: `library.html` status filter (`#status-filter`), `add.html` ISBN + query inputs (`#isbn-input`, `#query-input`), `import.html` CSV file input (`#csv-input`). `book_detail.html` already used the `sr-only` pattern for status + review.
+- `stats.html` per-year table gains `<caption class="sr-only">Books and pages read per year</caption>`. `import.html`'s `#plan-output` and `#apply-report` gain `aria-live="polite"` to match the parity already on `add.html`'s `#add-results`.
+- Bar-chart width-in animation in `internal/http/static/app.js` — `initBarAnimation()` hooks into DOMContentLoaded after `initShortcuts()`. Short-circuits on `matchMedia('(prefers-reduced-motion: reduce)').matches`. For every `.bar` with a `bar--wN` (non-zero) class, it records the target class, swaps to `bar--w0`, forces a reflow via `el.offsetWidth`, and inside `requestAnimationFrame` restores the target — the existing `transition: width var(--motion-slow)` tweens it. Server still renders the final class so no-JS readers and reduced-motion users see the correct widths immediately.
+- Color token fix in `app.css` for WCAG 2.2 AA: light-mode `--star` deepened from `#eab308` → `#a16207` so filled stars pass ≥3:1 non-text contrast on both `--bg` and `--surface`. Empty star (rating) and empty-state illustrations moved from `var(--border-strong)` to `var(--muted)` so both clear the 3:1 threshold. `--border-strong` retained as a soft-divider / hover-state token (inactive-state WCAG exception).
+- `cmd/a11y-check/main.go` (new, `//go:build ignore`, stdlib only). Parses `:root { … }` and `@media (prefers-color-scheme: dark) :root { … }` blocks from `internal/http/static/app.css`, resolves `#rrggbb`/`#rgb` hex tokens (skips `color-mix()`), and prints two sections per palette: a blocking check over 15 curated UI-used pairs (exits non-zero on any AA fail) and an informational full-matrix audit of every (fg-looking, bg-looking) combination. Matches the `cmd/gen-icons` pattern (stdlib, ignore-tagged, run standalone). Makefile gains `a11y:` target; not wired into `all`.
+- `internal/http/static/sw.js` `CACHE_VERSION` bumped `shelf-v3 → shelf-v4` so returning clients install the new sprite + CSS + JS bundle.
+- New regression guards in `internal/http/templates/templates_test.go`: `TestSkipLinkOnEveryPage` (every page's `<main>` carries `id="main"`; nav emits the link), `TestRatingUsesFieldsetWithLegend` (fieldset + sr-only legend + h2 preserved + no `role="group"`), `TestEmptyStatesRenderIllustration` (zero-data renders across 5 templates all emit `empty-state__icon` + the matching `use href="#icon-empty-…"`), `TestStatsBarsCarryWidthClass` (every `.bar` retains some `bar--wN` class so the animation has a target), `TestFormsUseExplicitLabelAssociation` (every form control id has a matching `<label for>`).
+- All four security lints (`go vet`, `staticcheck`, `gosec`, `govulncheck`) clean; `go test ./...` green; `cmd/a11y-check` reports all blocking pairs PASS in both palettes.
 
 Session 10 (typography + motion system):
 - Display font-stack refinement; letter-spacing pass on all display headings; `font-feature-settings` for Segoe UI Variable stylistic alternates

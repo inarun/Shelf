@@ -242,6 +242,303 @@ func TestBookDetailRatingUsesStarIcons(t *testing.T) {
 	}
 }
 
+func TestSkipLinkOnEveryPage(t *testing.T) {
+	// Every top-level page must carry id="main" on its <main> so the
+	// skip-to-content link resolves; the shared nav partial must emit
+	// the link itself. Partials (underscore-prefixed) are skipped.
+	mainRx := regexp.MustCompile(`(?is)<main\b[^>]*>`)
+	mainIDRx := regexp.MustCompile(`(?is)<main\b[^>]*\bid\s*=\s*"main"`)
+	err := fs.WalkDir(FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || path.Ext(p) != ".html" {
+			return nil
+		}
+		if strings.HasPrefix(path.Base(p), "_") {
+			return nil
+		}
+		data, err := fs.ReadFile(FS(), p)
+		if err != nil {
+			return err
+		}
+		body := string(data)
+		if mainRx.MatchString(body) && !mainIDRx.MatchString(body) {
+			t.Errorf("%s has <main> but is missing id=\"main\" — skip-link anchor will not resolve", p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	data := map[string]any{"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library"}
+	if err := tmpl.ExecuteTemplate(&buf, "nav", data); err != nil {
+		t.Fatalf("execute nav: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{`class="skip-link"`, `href="#main"`, `Skip to main content`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("nav missing %q; body:\n%s", want, out)
+		}
+	}
+}
+
+func TestRatingUsesFieldsetWithLegend(t *testing.T) {
+	// Session 9 upgraded the rating widget to <fieldset><legend>...
+	// The <h2>Rating</h2> heading stays for outline; the legend is
+	// sr-only. The old role="group" + aria-label="Star rating" are
+	// removed because the fieldset+legend covers both.
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken":   "t",
+		"RequestID":   "r",
+		"ActiveNav":   "library",
+		"Warnings":    []string{},
+		"RatingRange": []int{1, 2, 3, 4, 5},
+		"Book": map[string]any{
+			"Filename":      "Foo by Bar.md",
+			"Title":         "Foo",
+			"Authors":       []string{"Bar"},
+			"Status":        "reading",
+			"Rating":        (*int)(nil),
+			"Review":        "",
+			"TimelineLines": []string{},
+			"CanonicalName": true,
+			"Cover":         "", "ISBN": "",
+			"SeriesName":  "",
+			"SeriesIndex": (*float64)(nil),
+		},
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "book_detail", data); err != nil {
+		t.Fatalf("execute book_detail: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `<fieldset class="rating-widget"`) {
+		t.Errorf("rating widget must be a <fieldset class=\"rating-widget\"; body:\n%s", out)
+	}
+	if !strings.Contains(out, `<legend class="sr-only">Star rating</legend>`) {
+		t.Errorf("rating widget missing sr-only <legend>; body:\n%s", out)
+	}
+	// The <h2>Rating</h2> outline anchor stays.
+	if !strings.Contains(out, `<h2>Rating</h2>`) {
+		t.Errorf("book_detail outline must still emit <h2>Rating</h2>; body:\n%s", out)
+	}
+	// No leftover role="group" on the rating widget itself.
+	ratingRx := regexp.MustCompile(`(?is)class="rating-widget"[^>]*role="group"`)
+	if ratingRx.MatchString(out) {
+		t.Errorf("rating widget should not carry role=\"group\" once <fieldset> is in place; body:\n%s", out)
+	}
+}
+
+func TestEmptyStatesRenderIllustration(t *testing.T) {
+	// Every zero-data page branch must render the illustrated empty-state
+	// component (container + icon <use>), not a bare paragraph. Using
+	// table-driven data lets a new empty state plug in without
+	// restructuring the test.
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := map[string]any{"CSRFToken": "t", "RequestID": "r"}
+
+	seriesSummary := map[string]any{
+		"StatusCounts":  map[string]int{"unread": 0, "reading": 0, "finished": 0, "paused": 0, "dnf": 0},
+		"TotalBooks":    0,
+		"TotalReads":    0,
+		"RatedBooks":    0,
+		"AverageRating": 0.0,
+	}
+
+	cases := []struct {
+		tmplName string
+		data     map[string]any
+		iconID   string
+	}{
+		{
+			tmplName: "library",
+			data: mergeMap(base, map[string]any{
+				"ActiveNav": "library",
+				"Books":     []any{},
+				"Filter":    map[string]string{"Status": ""},
+			}),
+			iconID: "icon-empty-shelf",
+		},
+		{
+			tmplName: "series_list",
+			data: mergeMap(base, map[string]any{
+				"ActiveNav": "series",
+				"Series":    []any{},
+			}),
+			iconID: "icon-empty-shelf",
+		},
+		{
+			tmplName: "series_detail",
+			data: mergeMap(base, map[string]any{
+				"ActiveNav": "series",
+				"Series": map[string]any{
+					"Name":      "Mistborn",
+					"Finished":  0,
+					"BookCount": 0,
+					"Books":     []any{},
+				},
+			}),
+			iconID: "icon-empty-shelf",
+		},
+		{
+			tmplName: "stats",
+			data: mergeMap(base, map[string]any{
+				"ActiveNav":     "stats",
+				"Summary":       seriesSummary,
+				"OrderedStatus": []string{"unread", "reading", "finished", "paused", "dnf"},
+				"Years":         []map[string]any{},
+				"MaxYearBooks":  int64(0),
+				"MaxYearPages":  int64(0),
+			}),
+			iconID: "icon-empty-chart",
+		},
+		{
+			tmplName: "book_detail",
+			data: mergeMap(base, map[string]any{
+				"ActiveNav":   "library",
+				"Warnings":    []string{},
+				"RatingRange": []int{1, 2, 3, 4, 5},
+				"Book": map[string]any{
+					"Filename":      "Foo by Bar.md",
+					"Title":         "Foo",
+					"Authors":       []string{"Bar"},
+					"Status":        "unread",
+					"Rating":        (*int)(nil),
+					"Review":        "",
+					"TimelineLines": []string{},
+					"CanonicalName": true,
+					"Cover":         "", "ISBN": "",
+					"SeriesName":  "",
+					"SeriesIndex": (*float64)(nil),
+				},
+			}),
+			iconID: "icon-empty-timeline",
+		},
+	}
+
+	for _, tc := range cases {
+		var buf bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&buf, tc.tmplName, tc.data); err != nil {
+			t.Errorf("execute %s: %v", tc.tmplName, err)
+			continue
+		}
+		out := buf.String()
+		if !strings.Contains(out, `class="empty-state__icon"`) {
+			t.Errorf("%s: empty-state component missing illustration container; body:\n%s", tc.tmplName, out)
+		}
+		if !strings.Contains(out, `href="#`+tc.iconID+`"`) {
+			t.Errorf("%s: expected sprite reference #%s; body:\n%s", tc.tmplName, tc.iconID, out)
+		}
+	}
+}
+
+func TestStatsBarsCarryWidthClass(t *testing.T) {
+	// The Session 9 bar-chart entry animation (initBarAnimation in app.js)
+	// pivots on the server-rendered .bar--wN class. Without it the JS
+	// would have no target to swap to and reduced-motion / no-JS users
+	// would see 0%-width bars. This guard keeps the render invariant.
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{
+		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "stats",
+		"Summary": map[string]any{
+			"TotalBooks": 1, "TotalReads": 1, "RatedBooks": 1, "AverageRating": 5.0,
+			"StatusCounts": map[string]int{"unread": 0, "reading": 0, "finished": 1, "paused": 0, "dnf": 0},
+		},
+		"OrderedStatus": []string{"unread", "reading", "finished", "paused", "dnf"},
+		"Years":         []map[string]any{{"Year": 2025, "Books": int64(1), "Pages": int64(300)}},
+		"MaxYearBooks":  int64(1),
+		"MaxYearPages":  int64(300),
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "stats", data); err != nil {
+		t.Fatalf("execute stats: %v", err)
+	}
+	out := buf.String()
+	barRx := regexp.MustCompile(`(?is)<span class="bar[^"]*\bbar--w\d+\b[^"]*"`)
+	if !barRx.MatchString(out) {
+		t.Errorf("every .bar must carry a bar--wN class; body:\n%s", out)
+	}
+}
+
+func TestFormsUseExplicitLabelAssociation(t *testing.T) {
+	// Every form control across library / add / import should be paired
+	// with a <label for="id"> that matches the control's id. Matches
+	// the Session 9 label-density cleanup.
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type page struct {
+		name string
+		data map[string]any
+	}
+	pages := []page{
+		{"library", map[string]any{
+			"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library",
+			"Books": []any{}, "Filter": map[string]string{"Status": ""},
+		}},
+		{"add", map[string]any{
+			"CSRFToken": "t", "RequestID": "r", "ActiveNav": "add",
+			"ProviderWired": true,
+		}},
+		{"import", map[string]any{
+			"CSRFToken": "t", "RequestID": "r", "ActiveNav": "import",
+		}},
+	}
+	idRx := regexp.MustCompile(`(?is)<(?:input|select|textarea)\b[^>]*\bid\s*=\s*"([^"]+)"`)
+	for _, pg := range pages {
+		var buf bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&buf, pg.name, pg.data); err != nil {
+			t.Errorf("execute %s: %v", pg.name, err)
+			continue
+		}
+		out := buf.String()
+		ids := idRx.FindAllStringSubmatch(out, -1)
+		if len(ids) == 0 {
+			t.Errorf("%s: expected at least one form control with an id", pg.name)
+			continue
+		}
+		for _, m := range ids {
+			id := m[1]
+			want := `for="` + id + `"`
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: form control id=%q has no matching <label for=%q>; body:\n%s",
+					pg.name, id, id, out)
+			}
+		}
+	}
+}
+
+// mergeMap is a tiny helper for table-driven tests — composes a base
+// data map with per-case overrides without mutating the base.
+func mergeMap(base, extra map[string]any) map[string]any {
+	out := make(map[string]any, len(base)+len(extra))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
+}
+
 func TestNoInlineScriptsInTemplates(t *testing.T) {
 	// Every <script> tag must have a src= attribute. CSP default-src 'self'
 	// disallows inline scripts; an external self-hosted reference is fine.

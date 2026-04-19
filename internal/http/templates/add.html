@@ -7,7 +7,7 @@
 </head>
 <body data-request-id="{{.RequestID}}">
   {{template "nav" .}}
-  <main data-page="add">
+  <main id="main" data-page="add">
     <h1>Add a book</h1>
     {{if not .ProviderWired}}
       <div class="banner error">The Open Library provider is not configured. Add-book is disabled.</div>
@@ -17,7 +17,8 @@
     <section class="add-section">
       <h2>By ISBN</h2>
       <form id="isbn-form" class="filter-bar">
-        <label>ISBN: <input type="text" name="isbn" autocomplete="off" inputmode="numeric" pattern="[0-9Xx\- ]{10,17}" required></label>
+        <label for="isbn-input">ISBN</label>
+        <input id="isbn-input" type="text" name="isbn" autocomplete="off" inputmode="numeric" pattern="[0-9Xx\- ]{10,17}" required>
         <button type="submit" class="primary">Look up</button>
       </form>
     </section>
@@ -25,7 +26,8 @@
     <section class="add-section">
       <h2>Search</h2>
       <form id="search-form" class="filter-bar">
-        <label>Query: <input type="text" name="q" autocomplete="off" maxlength="256" required></label>
+        <label for="query-input">Query</label>
+        <input id="query-input" type="text" name="q" autocomplete="off" maxlength="256" required>
         <button type="submit" class="primary">Search</button>
       </form>
     </section>

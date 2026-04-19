@@ -719,6 +719,48 @@
     }
   }
 
+  // Bar-chart width-in animation. Stats bars are server-rendered at their
+  // final .bar--wN class so no-JS readers and reduced-motion users see the
+  // correct width immediately. When motion is allowed, we strip the target
+  // class, force a reflow to commit the 0%-width style, then restore the
+  // target inside requestAnimationFrame — the existing CSS `transition:
+  // width` rule does the tween. No-op when `.bar` is absent (every page
+  // except /stats).
+  function initBarAnimation() {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    var bars = document.querySelectorAll(".bar");
+    if (bars.length === 0) return;
+    var pending = [];
+    bars.forEach(function (el) {
+      var target = null;
+      for (var i = 0; i < el.classList.length; i++) {
+        var cls = el.classList[i];
+        var m = cls.match(/^bar--w(\d+)$/);
+        if (m && cls !== "bar--w0") {
+          target = cls;
+          break;
+        }
+      }
+      if (!target) return;
+      el.classList.remove(target);
+      el.classList.add("bar--w0");
+      pending.push({ el: el, target: target });
+    });
+    if (pending.length === 0) return;
+    // Force a reflow so the 0% width paints before we schedule the target.
+    // Reading offsetWidth on the last element is enough to flush layout.
+    // eslint-disable-next-line no-unused-expressions
+    pending[pending.length - 1].el.offsetWidth;
+    requestAnimationFrame(function () {
+      pending.forEach(function (p) {
+        p.el.classList.remove("bar--w0");
+        p.el.classList.add(p.target);
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-rating-widget]").forEach(initRating);
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
@@ -727,6 +769,7 @@
     initAddPage();
     initCoverControls();
     initShortcuts();
+    initBarAnimation();
     registerServiceWorker();
   });
 })();

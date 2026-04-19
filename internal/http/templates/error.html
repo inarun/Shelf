@@ -7,7 +7,7 @@
 </head>
 <body data-request-id="{{.RequestID}}">
   {{template "nav" .}}
-  <main>
+  <main id="main">
     <h1>{{.Status}}</h1>
     <p>{{.Message}}</p>
     {{if .RequestID}}<p class="muted"><small>Request ID: <code>{{.RequestID}}</code></small></p>{{end}}

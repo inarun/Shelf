@@ -7,7 +7,7 @@
 </head>
 <body data-request-id="{{.RequestID}}">
   {{template "nav" .}}
-  <main>
+  <main id="main">
     <h1>Series</h1>
     <p class="muted">{{len .Series}} series tracked.</p>
     {{if .Series}}
@@ -20,7 +20,11 @@
         {{end}}
       </ul>
     {{else}}
-      <p><em>No series yet. Add books with a <code>series</code> frontmatter field to populate this page.</em></p>
+      <div class="empty-state">
+        <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-shelf"/></svg>
+        <p class="empty-state__title">No series yet</p>
+        <p class="empty-state__body">Set a <code>series</code> field in any book's frontmatter and it will show up here, grouped by name.</p>
+      </div>
     {{end}}
   </main>
   {{template "scripts" .}}

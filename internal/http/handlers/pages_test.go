@@ -115,8 +115,8 @@ func TestLibraryViewStatusFilter(t *testing.T) {
 	// filter to finished — the seed is 'reading', so should be empty.
 	rec := httptest.NewRecorder()
 	d.LibraryView(rec, httptest.NewRequest(http.MethodGet, "/library?status=finished", nil))
-	if !strings.Contains(rec.Body.String(), "No books") {
-		t.Errorf("expected empty state with status=finished filter; body:\n%s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "empty-state__icon") {
+		t.Errorf("expected empty-state illustration with status=finished filter; body:\n%s", rec.Body.String())
 	}
 }
 
