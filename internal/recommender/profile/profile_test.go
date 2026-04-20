@@ -268,3 +268,44 @@ func TestWeightedMeanStdev_ZeroTotalWeight(t *testing.T) {
 		t.Error("weightedStdev should return ok=false when all weights are zero")
 	}
 }
+
+func TestBuild_ShelfAxisMeansPopulatedForFrequentShelf(t *testing.T) {
+	// Two books on "sci-fi" with plot ratings 5 and 4 — recency-weighted
+	// mean should be ~4.5 because both finished on the same day so weights
+	// match. ShelfAxisMeans["sci-fi"]["plot"] is the AxisMatch input the
+	// S18 scorer reads.
+	books := []store.BookRow{
+		{Title: "A", Authors: []string{"X"}, Categories: []string{"sci-fi"},
+			RatingOverall: pf64(5), RatingDimensions: map[string]int{"plot": 5},
+			FinishedDates: []string{"2026-04-18"}},
+		{Title: "B", Authors: []string{"Y"}, Categories: []string{"sci-fi"},
+			RatingOverall: pf64(4), RatingDimensions: map[string]int{"plot": 4},
+			FinishedDates: []string{"2026-04-18"}},
+	}
+	p := Build(books, fixedNow())
+	got, ok := p.ShelfAxisMeans["sci-fi"]["plot"]
+	if !ok {
+		t.Fatalf("ShelfAxisMeans[sci-fi][plot] missing; got %+v", p.ShelfAxisMeans)
+	}
+	if math.Abs(got-4.5) > 1e-9 {
+		t.Errorf("ShelfAxisMeans[sci-fi][plot] = %v, want ~4.5", got)
+	}
+}
+
+func TestBuild_ShelfAxisMeansSuppressedForSingleSample(t *testing.T) {
+	// Single (shelf, axis) sample → entry omitted. Mirrors the AxisStdevs
+	// suppression rule so AxisMatch never reads from a one-book sample.
+	books := []store.BookRow{
+		{Title: "Only", Authors: []string{"Z"}, Categories: []string{"sci-fi"},
+			RatingOverall: pf64(5), RatingDimensions: map[string]int{"plot": 5},
+			FinishedDates: []string{"2026-04-18"}},
+	}
+	p := Build(books, fixedNow())
+	if _, ok := p.ShelfAxisMeans["sci-fi"]["plot"]; ok {
+		t.Errorf("expected (sci-fi, plot) suppressed for n=1, got %+v",
+			p.ShelfAxisMeans)
+	}
+	if len(p.ShelfAxisMeans) != 0 {
+		t.Errorf("expected empty ShelfAxisMeans, got %+v", p.ShelfAxisMeans)
+	}
+}

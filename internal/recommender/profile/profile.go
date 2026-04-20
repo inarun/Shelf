@@ -27,17 +27,24 @@ import (
 // formula (Σw · (v − μ)² / Σw); a sample-stdev correction with
 // reliability weights has no clean denominator and adds nothing at
 // recommender granularity.
+//
+// ShelfAxisMeans (added Session 18) carries per-(shelf, axis) recency-
+// weighted means so the AxisMatch scorer can answer "user rates Plot
+// highly on sci-fi shelves". Outer key = shelf, inner key = axis. Same
+// ≥2-sample suppression as AxisStdevs — single-sample (shelf, axis)
+// pairs are dropped, not zero-filled.
 type Profile struct {
-	TopAuthors       []string           `json:"top_authors"`
-	TopShelves       []string           `json:"top_shelves"`
-	AxisMeans        map[string]float64 `json:"axis_means"`
-	AxisStdevs       map[string]float64 `json:"axis_stdevs"`
-	LengthMean       float64            `json:"length_mean"`
-	LengthStdev      *float64           `json:"length_stdev"`
-	SeriesInProgress []string           `json:"series_in_progress"`
-	RatingMean       float64            `json:"rating_mean"`
-	BookCount        int                `json:"book_count"`
-	RatedCount       int                `json:"rated_count"`
+	TopAuthors       []string                      `json:"top_authors"`
+	TopShelves       []string                      `json:"top_shelves"`
+	AxisMeans        map[string]float64            `json:"axis_means"`
+	AxisStdevs       map[string]float64            `json:"axis_stdevs"`
+	ShelfAxisMeans   map[string]map[string]float64 `json:"shelf_axis_means"`
+	LengthMean       float64                       `json:"length_mean"`
+	LengthStdev      *float64                      `json:"length_stdev"`
+	SeriesInProgress []string                      `json:"series_in_progress"`
+	RatingMean       float64                       `json:"rating_mean"`
+	BookCount        int                           `json:"book_count"`
+	RatedCount       int                           `json:"rated_count"`
 }
 
 // topN caps TopAuthors and TopShelves. Eight covers any realistic
@@ -74,17 +81,19 @@ func Extract(ctx context.Context, st *store.Store) (*Profile, error) {
 // downstream JSON encoding stays stable.
 func Build(books []store.BookRow, now time.Time) *Profile {
 	p := &Profile{
-		AxisMeans:  map[string]float64{},
-		AxisStdevs: map[string]float64{},
-		BookCount:  len(books),
+		AxisMeans:      map[string]float64{},
+		AxisStdevs:     map[string]float64{},
+		ShelfAxisMeans: map[string]map[string]float64{},
+		BookCount:      len(books),
 	}
 
 	var (
-		authorScores = map[string]float64{}
-		shelfScores  = map[string]float64{}
-		axisValues   = map[string][]weightedVal{}
-		lengthValues []weightedVal
-		ratingValues []weightedVal
+		authorScores     = map[string]float64{}
+		shelfScores      = map[string]float64{}
+		axisValues       = map[string][]weightedVal{}
+		shelfAxisValues  = map[string]map[string][]weightedVal{}
+		lengthValues     []weightedVal
+		ratingValues     []weightedVal
 	)
 
 	for _, b := range books {
@@ -124,6 +133,18 @@ func Build(books []store.BookRow, now time.Time) *Profile {
 				value:  float64(v),
 				weight: rec,
 			})
+			for _, c := range b.Categories {
+				if c == "" {
+					continue
+				}
+				if shelfAxisValues[c] == nil {
+					shelfAxisValues[c] = map[string][]weightedVal{}
+				}
+				shelfAxisValues[c][axis] = append(shelfAxisValues[c][axis], weightedVal{
+					value:  float64(v),
+					weight: rec,
+				})
+			}
 		}
 	}
 
@@ -140,6 +161,22 @@ func Build(books []store.BookRow, now time.Time) *Profile {
 			if stdev, ok := weightedStdev(samples, mean); ok {
 				p.AxisStdevs[axis] = stdev
 			}
+		}
+	}
+
+	for shelf, byAxis := range shelfAxisValues {
+		for axis, samples := range byAxis {
+			if len(samples) < 2 {
+				continue
+			}
+			mean, ok := weightedMean(samples)
+			if !ok {
+				continue
+			}
+			if p.ShelfAxisMeans[shelf] == nil {
+				p.ShelfAxisMeans[shelf] = map[string]float64{}
+			}
+			p.ShelfAxisMeans[shelf][axis] = mean
 		}
 	}
 
