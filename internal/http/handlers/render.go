@@ -12,11 +12,15 @@ import (
 // PendingMigrations is the count of book rows with a scalar-only
 // rating; the nav renders a badge on the "Migrate" link when it's
 // non-zero so the one-time v0.2.1 migration is discoverable.
+// RecommenderEnabled mirrors Dependencies.RecommenderEnabled so the
+// nav partial can gate the /recommendations entry without every page
+// handler re-passing the flag.
 type PageCommon struct {
-	CSRFToken         string
-	RequestID         string
-	ActiveNav         string
-	PendingMigrations int64
+	CSRFToken          string
+	RequestID          string
+	ActiveNav          string
+	PendingMigrations  int64
+	RecommenderEnabled bool
 }
 
 // renderHTML executes the named template against data. Data is expected
@@ -72,9 +76,10 @@ func (d *Dependencies) newPageCommon(r *http.Request, activeNav string) PageComm
 		}
 	}
 	return PageCommon{
-		CSRFToken:         middleware.CSRFTokenFor(r.Context(), d.HMACKey),
-		RequestID:         middleware.RequestIDFrom(r.Context()),
-		ActiveNav:         activeNav,
-		PendingMigrations: pending,
+		CSRFToken:          middleware.CSRFTokenFor(r.Context(), d.HMACKey),
+		RequestID:          middleware.RequestIDFrom(r.Context()),
+		ActiveNav:          activeNav,
+		PendingMigrations:  pending,
+		RecommenderEnabled: d.RecommenderEnabled,
 	}
 }

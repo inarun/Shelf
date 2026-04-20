@@ -15,7 +15,7 @@ func TestParse(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	for _, name := range []string{"library", "book_detail", "import", "error", "head", "nav", "scripts", "bookCard",
-		"add", "series_list", "series_detail", "stats", "iconSprite", "helpOverlay"} {
+		"add", "series_list", "series_detail", "stats", "iconSprite", "helpOverlay", "recommendations"} {
 		if tmpl.Lookup(name) == nil {
 			t.Errorf("template %q not defined", name)
 		}
@@ -41,6 +41,7 @@ func TestLibraryRendersBooks(t *testing.T) {
 	data := struct {
 		CSRFToken, RequestID, ActiveNav string
 		PendingMigrations               int64
+		RecommenderEnabled              bool
 		Books                           []bookRow
 		Filter                          struct{ Status, Query string }
 	}{

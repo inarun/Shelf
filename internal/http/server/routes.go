@@ -24,6 +24,7 @@ func registerRoutes(mux *http.ServeMux, h *handlers.Dependencies) {
 	mux.HandleFunc("GET /series", h.SeriesList)
 	mux.HandleFunc("GET /series/{name}", h.SeriesDetail)
 	mux.HandleFunc("GET /stats", h.Stats)
+	mux.HandleFunc("GET /recommendations", h.RecommendationsPage)
 
 	// Static assets.
 	mux.Handle("GET /static/", http.StripPrefix("/static/", static.Handler()))

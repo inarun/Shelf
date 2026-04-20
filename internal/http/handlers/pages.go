@@ -446,6 +446,67 @@ func (d *Dependencies) MigratePage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RecommendationsPageData is the template data for recommendations.html.
+// Entries is the zipped result of rules.Rank back-joined against the
+// candidate BookRows so the shared bookCard partial has every field it
+// reads (Cover, RatingOverall, StartedDates, …) — the JSON ScoredBook
+// shape alone would be missing those.
+type RecommendationsPageData struct {
+	PageCommon
+	Entries []RecommendationEntry
+}
+
+// RecommendationEntry carries the full BookRow (embedded so bookCard's
+// {{.Title}}, {{.Authors}}, {{.Cover}}, {{.Status}}, … all resolve) plus
+// the Score + Reasons from rules.Rank for the per-card "Why?" disclosure.
+type RecommendationEntry struct {
+	store.BookRow
+	Score   float64
+	Reasons []string
+}
+
+// RecommendationsPage renders /recommendations. Three branches:
+//   - PageCommon.RecommenderEnabled == false → disabled-banner view.
+//     Status is 200; the nav entry is already hidden by the _shared
+//     gate so direct-URL visitors are the only ones who land here.
+//   - Enabled but ranked pipeline returns zero entries → empty-state
+//     banner (library too new / no candidates match unread|paused).
+//   - Enabled with results → recommendation card grid with a Why?
+//     disclosure per card listing the top reasons.
+func (d *Dependencies) RecommendationsPage(w http.ResponseWriter, r *http.Request) {
+	pc := d.newPageCommon(r, "recommendations")
+
+	if !d.RecommenderEnabled {
+		d.renderHTML(w, r, "recommendations", RecommendationsPageData{PageCommon: pc})
+		return
+	}
+
+	ranked, byFilename, err := d.rankRecommendations(r.Context())
+	if err != nil {
+		d.Logger.Error("recommendations list books", "err", err)
+		d.renderErrorPage(w, r, http.StatusInternalServerError, "Could not load recommendations.")
+		return
+	}
+
+	entries := make([]RecommendationEntry, 0, len(ranked))
+	for _, sb := range ranked {
+		row, ok := byFilename[sb.Filename]
+		if !ok {
+			continue
+		}
+		entries = append(entries, RecommendationEntry{
+			BookRow: row,
+			Score:   sb.Score,
+			Reasons: sb.Reasons,
+		})
+	}
+
+	d.renderHTML(w, r, "recommendations", RecommendationsPageData{
+		PageCommon: pc,
+		Entries:    entries,
+	})
+}
+
 // HealthSignature is the stable token emitted by /healthz. The
 // single-instance probe in internal/platform/singleton checks for it
 // so "something is listening on our port" can be distinguished from

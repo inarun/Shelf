@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -60,9 +61,7 @@ func (d *Dependencies) GetRecommendationsProfile(w http.ResponseWriter, r *http.
 
 // GetRecommendations handles GET /api/recommendations. Returns up to
 // maxRecommendations ScoredBook entries, ranked by combined score, JSON-
-// encoded as a bare array. Candidate eligibility: status ∈ {"", "unread",
-// "paused"}. Walks the index once and reuses the books slice for both
-// Profile.Build and the candidate filter.
+// encoded as a bare array.
 //
 // Gated on [recommender].enabled — same 503/"unavailable" envelope as
 // GetRecommendationsProfile.
@@ -73,7 +72,7 @@ func (d *Dependencies) GetRecommendations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	books, err := d.Store.ListBooks(r.Context(), store.Filter{})
+	ranked, _, err := d.rankRecommendations(r.Context())
 	if err != nil {
 		d.Logger.Error("recommender list books",
 			"request_id", middleware.RequestIDFrom(r.Context()),
@@ -84,14 +83,45 @@ func (d *Dependencies) GetRecommendations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	d.Logger.Debug("recommendations served",
+		"request_id", middleware.RequestIDFrom(r.Context()),
+		"returned", len(ranked),
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(ranked)
+}
+
+// rankRecommendations is the shared pipeline behind both the JSON
+// /api/recommendations endpoint and the SSR /recommendations page. It
+// walks the index once, builds the taste profile + series states, filters
+// the candidates (status ∈ {"", "unread", "paused"} — reading/finished/
+// dnf excluded), runs rules.Rank with DefaultWeights, and truncates to
+// maxRecommendations before returning.
+//
+// The second return is a filename→BookRow lookup over the candidate
+// slice so SSR callers can zip back to the full row (Cover, RatingOverall,
+// StartedDates, …) without a second store scan. JSON callers discard it.
+//
+// No caller-facing status gate here — callers own the 503 envelope
+// (JSON) or the disabled-banner render (SSR).
+func (d *Dependencies) rankRecommendations(ctx context.Context) ([]rules.ScoredBook, map[string]store.BookRow, error) {
+	books, err := d.Store.ListBooks(ctx, store.Filter{})
+	if err != nil {
+		return nil, nil, err
+	}
+
 	p := profile.Build(books, time.Now().UTC())
 	ss := series.Detect(books)
 
 	candidates := make([]store.BookRow, 0, len(books))
+	byFilename := make(map[string]store.BookRow, len(books))
 	for _, b := range books {
 		switch b.Status {
 		case "", "unread", "paused":
 			candidates = append(candidates, b)
+			byFilename[b.Filename] = b
 		}
 	}
 
@@ -100,14 +130,5 @@ func (d *Dependencies) GetRecommendations(w http.ResponseWriter, r *http.Request
 		ranked = ranked[:maxRecommendations]
 	}
 
-	d.Logger.Debug("recommendations served",
-		"request_id", middleware.RequestIDFrom(r.Context()),
-		"library", len(books),
-		"candidates", len(candidates),
-		"returned", len(ranked),
-	)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(ranked)
+	return ranked, byFilename, nil
 }

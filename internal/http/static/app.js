@@ -1069,14 +1069,15 @@
 
   // initShortcuts wires document-level keyboard shortcuts:
   //   /              — focus the first filter/search input on the page
-  //   g then l|s|a|i|m (within 600 ms) — navigate to /library, /series, /add, /import, /migrate
+  //   g then l|s|a|i|m|r (within 600 ms) — navigate to /library, /series,
+  //                    /add, /import, /migrate, /recommendations
   //   ?              — toggle the help overlay
   //   Esc            — close the overlay, or blur the current input
   //
   // Keys are ignored while typing in an input/textarea/select or in a
   // contenteditable element so the shortcuts never fight text entry.
   function initShortcuts() {
-    const NAV_CHORD = { l: "/library", s: "/series", a: "/add", i: "/import", m: "/migrate" };
+    const NAV_CHORD = { l: "/library", s: "/series", a: "/add", i: "/import", m: "/migrate", r: "/recommendations" };
     const CHORD_TIMEOUT_MS = 600;
     const overlay = document.getElementById("kbd-help");
     const openBtn = document.getElementById("kbd-help-btn");
@@ -1265,6 +1266,28 @@
     if (input.value.trim() !== "") apply();
   }
 
+  // initRecommendations wires the per-card "Why?" disclosure on
+  // /recommendations. A single delegated click listener on the grid
+  // container toggles aria-expanded on the button and `hidden` on the
+  // sibling popover referenced by aria-controls. No focus trap — the
+  // popover is inline content, not a dialog, so Tab just continues
+  // through the document.
+  function initRecommendations() {
+    const grid = document.querySelector("[data-recommendations]");
+    if (!grid) return;
+    grid.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-why-toggle]");
+      if (!btn || !grid.contains(btn)) return;
+      const id = btn.getAttribute("aria-controls");
+      if (!id) return;
+      const panel = document.getElementById(id);
+      if (!panel) return;
+      const open = btn.getAttribute("aria-expanded") === "true";
+      btn.setAttribute("aria-expanded", open ? "false" : "true");
+      panel.hidden = open;
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-rating-grid]").forEach(initRatingGrid);
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
@@ -1275,6 +1298,7 @@
     initAddPage();
     initCoverControls();
     initLibrarySearch();
+    initRecommendations();
     initShortcuts();
     initBarAnimation();
     registerServiceWorker();

@@ -1,0 +1,49 @@
+{{define "recommendations"}}
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "head" .}}
+  <title>Recommendations — Shelf</title>
+</head>
+<body data-request-id="{{.RequestID}}">
+  {{template "nav" .}}
+  <main id="main">
+    <h1>Recommendations</h1>
+    {{if not .RecommenderEnabled}}
+      <div class="banner warn">
+        <p>Recommendations are disabled. Set <code>[recommender]</code> with <code>enabled = true</code> in <code>shelf.toml</code>, then restart Shelf.</p>
+      </div>
+    {{else if eq (len .Entries) 0}}
+      <div class="empty-state">
+        <svg class="empty-state__icon" aria-hidden="true" focusable="false"><use href="#icon-empty-shelf"/></svg>
+        <p class="empty-state__title">No recommendations yet</p>
+        <p class="empty-state__body">Add more books to your library, or finish and rate a few, so Shelf can learn your taste. Only <code>unread</code> and <code>paused</code> books are considered as candidates.</p>
+      </div>
+    {{else}}
+      <p class="muted">Top {{len .Entries}} pick{{pluralS (len .Entries)}} from your unread and paused shelves.</p>
+      <section class="recommendations-grid" data-recommendations>
+        {{range $i, $e := .Entries}}
+          <article class="recommendation-card">
+            {{template "bookCard" $e}}
+            <div class="why-row">
+              <button class="secondary why-toggle" type="button" data-why-toggle
+                      aria-expanded="false" aria-controls="why-{{$i}}">Why?</button>
+            </div>
+            <div class="why-popover" id="why-{{$i}}" role="region" aria-label="Reasons for recommending {{$e.Title}}" hidden>
+              {{if $e.Reasons}}
+                <ul class="reason-list">
+                  {{range $e.Reasons}}<li>{{.}}</li>{{end}}
+                </ul>
+              {{else}}
+                <p class="muted">No specific reasons surfaced for this candidate.</p>
+              {{end}}
+            </div>
+          </article>
+        {{end}}
+      </section>
+    {{end}}
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

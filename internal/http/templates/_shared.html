@@ -20,6 +20,7 @@
   <a href="/library" {{if eq .ActiveNav "library"}}class="active"{{end}}>Library</a>
   <a href="/series"  {{if eq .ActiveNav "series"}}class="active"{{end}}>Series</a>
   <a href="/stats"   {{if eq .ActiveNav "stats"}}class="active"{{end}}>Stats</a>
+  {{if .RecommenderEnabled}}<a href="/recommendations" {{if eq .ActiveNav "recommendations"}}class="active"{{end}}>Recommendations</a>{{end}}
   <a href="/add"     {{if eq .ActiveNav "add"}}class="active"{{end}}>Add</a>
   <a href="/import"  {{if eq .ActiveNav "import"}}class="active"{{end}}>Import</a>
   <a href="/sync"    {{if eq .ActiveNav "sync"}}class="active"{{end}}>Sync</a>
@@ -48,6 +49,7 @@
       <dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Go to Add</dd>
       <dt><kbd>g</kbd> <kbd>i</kbd></dt><dd>Go to Import</dd>
       <dt><kbd>g</kbd> <kbd>m</kbd></dt><dd>Go to Migrate</dd>
+      <dt><kbd>g</kbd> <kbd>r</kbd></dt><dd>Go to Recommendations</dd>
       <dt><kbd>?</kbd></dt><dd>Open / close this help</dd>
       <dt><kbd>Esc</kbd></dt><dd>Close overlays, blur inputs</dd>
     </dl>
