@@ -181,6 +181,12 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 
 	go drainWatcher(ctx, w, sy, logger)
 
+	// shutdownCh lets the web-UI shutdown handler request a clean exit.
+	// Buffered(1) + select-default in the handler makes duplicate clicks
+	// idempotent. Only main.go holds the bidirectional end; handlers get
+	// the send-only view through Dependencies.
+	shutdownCh := make(chan struct{}, 1)
+
 	srv, err := httpserver.New(httpserver.Dependencies{
 		Config:               cfg,
 		Store:                st,
@@ -192,6 +198,7 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		BooksAbs:             booksAbs,
 		BackupsRoot:          backupsRoot,
 		Logger:               logger,
+		ShutdownSignal:       shutdownCh,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
@@ -292,6 +299,7 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 	// Wait for one of:
 	//   * OS shutdown signal
 	//   * HTTP server exit (graceful or fatal)
+	//   * Web-UI shutdown (POST /api/shutdown)
 	//   * Context cancellation (tray Quit)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -307,6 +315,8 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		} else {
 			logger.Info("http server exited")
 		}
+	case <-shutdownCh:
+		logger.Info("web-ui shutdown requested")
 	case <-ctx.Done():
 		logger.Info("root context cancelled")
 	}

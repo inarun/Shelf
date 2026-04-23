@@ -36,4 +36,11 @@ type Dependencies struct {
 	Templates            *template.Template
 	HMACKey              []byte
 	Logger               *slog.Logger
+
+	// ShutdownSignal is closed/signalled by the web-UI shutdown
+	// handler (POST /api/shutdown) to request a clean process exit.
+	// Owned by cmd/shelf/main.go's select loop; handlers only send.
+	// Buffered size 1 + select-default in the handler makes duplicate
+	// requests idempotent.
+	ShutdownSignal chan<- struct{}
 }

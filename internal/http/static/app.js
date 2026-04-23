@@ -1289,6 +1289,82 @@
     });
   }
 
+  // initShutdown wires the nav Quit button to a native <dialog> confirm
+  // that POSTs /api/shutdown. On 202, the dialog closes and the
+  // shutdown-complete overlay takes over; a short /healthz poll loop
+  // detects when the backend exits and updates the message. All
+  // state-changing POSTs route through api() so CSRF is injected.
+  function initShutdown() {
+    const trigger  = document.querySelector("[data-shutdown]");
+    const dialog   = document.getElementById("shutdown-confirm");
+    if (!trigger || !dialog) return;
+    const confirm  = dialog.querySelector("[data-shutdown-confirm]");
+    const cancel   = dialog.querySelector("[data-shutdown-cancel]");
+    const errorEl  = dialog.querySelector("[data-shutdown-error]");
+    const complete = document.getElementById("shutdown-complete");
+    const msg      = complete ? complete.querySelector("[data-shutdown-message]") : null;
+    const title    = complete ? complete.querySelector("[data-shutdown-title]") : null;
+    if (!confirm || !cancel || !complete) return;
+
+    function clearError() {
+      if (!errorEl) return;
+      errorEl.textContent = "";
+      errorEl.hidden = true;
+    }
+    function showError(text) {
+      if (!errorEl) return;
+      errorEl.textContent = text;
+      errorEl.hidden = false;
+    }
+
+    trigger.addEventListener("click", () => {
+      clearError();
+      confirm.disabled = false;
+      if (typeof dialog.showModal === "function") {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute("open", "");
+      }
+    });
+    cancel.addEventListener("click", () => dialog.close("cancel"));
+
+    confirm.addEventListener("click", async () => {
+      clearError();
+      confirm.disabled = true;
+      const resp = await api("POST", "/api/shutdown", null);
+      if (resp.status !== 202) {
+        confirm.disabled = false;
+        showError(errorText(resp.data, "Shutdown failed — try again."));
+        return;
+      }
+      dialog.close("confirm");
+      complete.hidden = false;
+      document.body.classList.add("is-shutting-down");
+
+      // Poll /healthz with short aborts; when it fails, the backend
+      // has stopped. Cap total wait at 10s so a stuck probe doesn't
+      // leave the user wondering forever.
+      const deadline = Date.now() + 10_000;
+      let stopped = false;
+      while (Date.now() < deadline) {
+        try {
+          const ac = new AbortController();
+          const t = setTimeout(() => ac.abort(), 500);
+          const r = await fetch("/healthz", { signal: ac.signal, cache: "no-store" });
+          clearTimeout(t);
+          if (!r.ok) { stopped = true; break; }
+        } catch (_) { stopped = true; break; }
+        await new Promise((r) => setTimeout(r, 1_000));
+      }
+      if (stopped) {
+        if (title) title.textContent = "Shelf has stopped";
+        if (msg)   msg.textContent = "You can close this tab.";
+      } else if (msg) {
+        msg.textContent = "Still shutting down — you can close this tab once the process exits.";
+      }
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-rating-grid]").forEach(initRatingGrid);
     document.querySelectorAll("[data-status-select]").forEach(initStatus);
@@ -1301,6 +1377,7 @@
     initLibrarySearch();
     initRecommendations();
     initShortcuts();
+    initShutdown();
     initBarAnimation();
     registerServiceWorker();
   });

@@ -57,6 +57,7 @@ func registerRoutes(mux *http.ServeMux, h *handlers.Dependencies) {
 	mux.HandleFunc("POST /api/add/create", h.AddCreate)
 	mux.HandleFunc("GET /api/recommendations/profile", h.GetRecommendationsProfile)
 	mux.HandleFunc("GET /api/recommendations", h.GetRecommendations)
+	mux.HandleFunc("POST /api/shutdown", h.Shutdown)
 
 	// Catch-all: routes the server doesn't recognize. The handler
 	// distinguishes /api/* (JSON envelope) from browser routes (HTML

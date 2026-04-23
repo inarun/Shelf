@@ -1489,3 +1489,82 @@ kbd {
   left: var(--space-1);
   color: var(--accent);
 }
+
+/* ===== Shutdown (Session 21) =====
+   Nav Quit button + native <dialog> confirm + full-viewport stopped
+   state. Mirrors the .kbd-help-* geometry tokens so the two overlays
+   feel like a family. Native <dialog> brings Escape-to-cancel and
+   focus-trap for free, so we don't reimplement them in JS. */
+.nav-quit {
+  padding: var(--space-1) var(--space-2);
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.nav-quit .icon { width: 1.1rem; height: 1.1rem; }
+.nav-quit-label { font-size: 0.85rem; }
+
+.shutdown-dialog {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  padding: var(--space-5);
+  min-width: min(28rem, 100%);
+  max-width: 32rem;
+}
+.shutdown-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+.shutdown-dialog h2 {
+  margin: 0 0 var(--space-3);
+  font-size: 1.1rem;
+}
+.shutdown-dialog p {
+  margin: 0 0 var(--space-3);
+  color: var(--fg-subtle);
+  font-size: 0.92rem;
+}
+.shutdown-dialog__error {
+  color: var(--danger);
+  font-weight: 600;
+}
+.shutdown-dialog__error[hidden] { display: none; }
+.shutdown-dialog__actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+}
+
+.shutdown-complete[hidden] { display: none; }
+.shutdown-complete {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  gap: var(--space-3);
+  background: var(--bg);
+  padding: var(--space-6);
+  text-align: center;
+}
+.shutdown-complete__icon {
+  width: 4rem;
+  height: 4rem;
+  color: var(--muted);
+  display: block;
+  margin: 0 auto var(--space-2);
+}
+.shutdown-complete__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+}
+.shutdown-complete__message {
+  margin: 0;
+  color: var(--fg-subtle);
+  max-width: 32rem;
+}

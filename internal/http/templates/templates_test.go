@@ -685,6 +685,69 @@ func TestSpriteHasIconLogoSymbol(t *testing.T) {
 	}
 }
 
+// TestSpriteHasIconPowerSymbol guards the Session 21 power glyph that
+// the nav Quit button and shutdown-complete overlay both use. Mirrors
+// TestSpriteHasIconLogoSymbol.
+func TestSpriteHasIconPowerSymbol(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "iconSprite", nil); err != nil {
+		t.Fatalf("execute iconSprite: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `id="icon-power"`) {
+		t.Errorf("sprite missing icon-power symbol; body:\n%s", out)
+	}
+	// Shares the 24x24 viewBox with the rest of the nav icons so .icon
+	// sizing stays consistent.
+	if !strings.Contains(out, `id="icon-power"`) ||
+		!regexp.MustCompile(`id="icon-power"[^>]*viewBox="0 0 24 24"`).MatchString(out) {
+		t.Errorf("icon-power should declare viewBox=\"0 0 24 24\"; body:\n%s", out)
+	}
+}
+
+// TestSharedNavHasShutdownButton asserts the Session 21 Quit button
+// and its <dialog>/overlay siblings render from the shared nav
+// template. The button carries data-shutdown so app.js's initShutdown
+// wiring can find it; the dialog carries data-shutdown-confirm /
+// data-shutdown-cancel so the JS can enumerate targets.
+func TestSharedNavHasShutdownButton(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	data := map[string]any{
+		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library",
+	}
+	if err := tmpl.ExecuteTemplate(&buf, "nav", data); err != nil {
+		t.Fatalf("execute nav: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="quit-btn"`,
+		`data-shutdown`,
+		`#icon-power`,
+		`id="shutdown-confirm"`,
+		`data-shutdown-confirm`,
+		`data-shutdown-cancel`,
+		`data-shutdown-error`,
+		`id="shutdown-complete"`,
+		`data-shutdown-message`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("shared nav missing %q; body:\n%s", want, out)
+		}
+	}
+	// The Quit button must not be a link — a link suggests navigation.
+	if regexp.MustCompile(`<a[^>]*data-shutdown`).MatchString(out) {
+		t.Errorf("Quit affordance should be a <button>, not an <a>; body:\n%s", out)
+	}
+}
+
 func TestNoInlineScriptsInTemplates(t *testing.T) {
 	// Every <script> tag must have a src= attribute. CSP default-src 'self'
 	// disallows inline scripts; an external self-hosted reference is fine.

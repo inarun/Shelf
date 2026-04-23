@@ -137,6 +137,27 @@ func TestPatchWithoutCSRFIs403(t *testing.T) {
 	}
 }
 
+// TestShutdown_RequiresCSRF exercises the full middleware chain: a POST
+// to /api/shutdown without X-CSRF-Token must be rejected with the
+// "csrf" error code before the handler runs. Unit-level shutdown tests
+// in internal/http/handlers bypass middleware for focused coverage —
+// this is the end-to-end guard that the destructive endpoint keeps
+// sitting behind CSRF.
+func TestShutdown_RequiresCSRF(t *testing.T) {
+	s, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/shutdown", nil)
+	req.Host = "127.0.0.1:7744"
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"csrf"`) {
+		t.Errorf("expected CSRF error envelope; got %s", rec.Body.String())
+	}
+}
+
 func TestStaticAssetsServed(t *testing.T) {
 	s, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/static/app.js", nil)

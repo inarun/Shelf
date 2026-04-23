@@ -36,6 +36,11 @@ type Dependencies struct {
 	BooksAbs             string
 	BackupsRoot          string
 	Logger               *slog.Logger
+
+	// ShutdownSignal, if non-nil, is forwarded to the handler layer
+	// and signalled by POST /api/shutdown to trigger a graceful exit
+	// from cmd/shelf/main.go. Owned upstream; server just threads it.
+	ShutdownSignal chan<- struct{}
 }
 
 // Server is the assembled stack. Immutable after New; all state lives
@@ -75,6 +80,7 @@ func New(deps Dependencies) (*Server, error) {
 		Templates:            tmpl,
 		HMACKey:              keys.HMAC[:],
 		Logger:               deps.Logger,
+		ShutdownSignal:       deps.ShutdownSignal,
 	}
 
 	mux := http.NewServeMux()

@@ -28,8 +28,30 @@
   <button type="button" id="kbd-help-btn" class="secondary kbd-help-btn" aria-haspopup="dialog" aria-controls="kbd-help" aria-label="Keyboard shortcuts (press ?)" title="Keyboard shortcuts (?)">
     <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-keyboard"/></svg>
   </button>
+  <button type="button" id="quit-btn" class="secondary nav-quit" data-shutdown aria-haspopup="dialog" aria-controls="shutdown-confirm" aria-label="Quit Shelf" title="Quit Shelf">
+    <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-power"/></svg>
+    <span class="nav-quit-label">Quit</span>
+  </button>
 </nav></header>
 {{template "helpOverlay" .}}
+{{template "shutdownOverlay" .}}
+{{end}}
+
+{{define "shutdownOverlay"}}
+<dialog id="shutdown-confirm" class="shutdown-dialog" aria-labelledby="shutdown-title" aria-describedby="shutdown-desc">
+  <h2 id="shutdown-title">Quit Shelf?</h2>
+  <p id="shutdown-desc">This stops the Shelf background service. Your vault files are safe; restart Shelf from the tray or Start menu.</p>
+  <p class="shutdown-dialog__error" data-shutdown-error role="alert" hidden></p>
+  <div class="shutdown-dialog__actions">
+    <button type="button" class="secondary" data-shutdown-cancel>Cancel</button>
+    <button type="button" class="primary" data-shutdown-confirm autofocus>Quit</button>
+  </div>
+</dialog>
+<div id="shutdown-complete" class="shutdown-complete" hidden role="status" aria-live="polite">
+  <svg class="shutdown-complete__icon" aria-hidden="true" focusable="false"><use href="#icon-power"/></svg>
+  <h2 class="shutdown-complete__title" data-shutdown-title>Shelf is shutting down…</h2>
+  <p class="shutdown-complete__message" data-shutdown-message>You can close this tab.</p>
+</div>
 {{end}}
 
 {{define "helpOverlay"}}

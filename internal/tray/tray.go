@@ -6,6 +6,11 @@
 // affordance, and cleanly quit the background process. It is the only
 // surface through which shelf.exe is long-lived on a typical session.
 //
+// As of v0.3.2 (Session 21), tray Quit is one of three peer shutdown
+// triggers alongside SIGINT/SIGTERM and POST /api/shutdown. All three
+// converge on the same cancel() + httpSrv.Shutdown(10s) + tray.Stop()
+// sequence in cmd/shelf/main.go; no path bypasses the others.
+//
 // The Windows implementation is a direct Win32 integration against
 // user32.dll / shell32.dll via golang.org/x/sys/windows. No cgo, no
 // third-party tray libraries. See tray_windows.go for the syscalls and
