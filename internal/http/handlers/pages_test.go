@@ -78,7 +78,6 @@ func seedDeps(t *testing.T) (*Dependencies, string) {
 		Syncer:      sy,
 		BooksAbs:    books,
 		BackupsRoot: filepath.Join(root, "backups"),
-		DataDir:     root,
 		Templates:   tmpl,
 		HMACKey:     []byte("abcdefghijklmnopqrstuvwxyzABCDEF"),
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),

@@ -206,6 +206,31 @@ func TestNavEmitsIconSpriteAndHelpOverlay(t *testing.T) {
 	}
 }
 
+// TestHelpOverlayListsAllNavChords asserts every chord letter in
+// app.js NAV_CHORD has a matching <dt><kbd>g</kbd> <kbd>X</kbd></dt>
+// row in the help overlay. Regression guard against future drift
+// between the dispatcher map and the user-facing shortcut list.
+func TestHelpOverlayListsAllNavChords(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	data := map[string]any{
+		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "library",
+	}
+	if err := tmpl.ExecuteTemplate(&buf, "nav", data); err != nil {
+		t.Fatalf("execute nav: %v", err)
+	}
+	out := buf.String()
+	for _, letter := range []string{"l", "s", "t", "a", "i", "y", "m", "r"} {
+		want := `<kbd>g</kbd> <kbd>` + letter + `</kbd>`
+		if !strings.Contains(out, want) {
+			t.Errorf("help overlay missing chord %q; full body:\n%s", want, out)
+		}
+	}
+}
+
 func TestBookDetailRatingGridHasFiveAxes(t *testing.T) {
 	// Session 15 replaced the single-axis star row with a 5-axis
 	// Trial-System grid. Each axis is a nested <fieldset> with a
@@ -1101,6 +1126,7 @@ func TestMigratePageRendersFormShell(t *testing.T) {
 	for _, want := range []string{
 		`<form id="plan-form"`,
 		`class="migrate-plan-form"`,
+		`class="migrate-apply-row"`,
 		`id="plan-output"`,
 		`id="apply-btn"`,
 		`id="apply-report"`,
@@ -1109,6 +1135,9 @@ func TestMigratePageRendersFormShell(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("migrate page missing %q; body:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, `class="sync-apply-row"`) {
+		t.Errorf("migrate page must not carry sync-apply-row class (semantic mismatch); body:\n%s", out)
 	}
 }
 

@@ -58,7 +58,6 @@ func buildServer(t *testing.T) (string, string, func()) {
 		Syncer:      sy,
 		BooksAbs:    books,
 		BackupsRoot: backups,
-		DataDir:     root,
 		Logger:      logger,
 	})
 	if err != nil {

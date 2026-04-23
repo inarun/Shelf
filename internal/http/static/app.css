@@ -616,7 +616,7 @@ textarea { resize: vertical; }
 }
 
 .rating-empty {
-  color: var(--fg-muted);
+  color: var(--muted);
 }
 
 /* Bumped badge — rendered to the right of the 5-star row when the
@@ -1269,6 +1269,30 @@ textarea { resize: vertical; }
 }
 
 .sync-apply-row {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-4);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ===== Migrate page layout (mirrors .sync-*) =====
+   Session 20: /migrate uses the same plan-preview → apply-report
+   cadence as /sync, so the styles reuse the same box model. A
+   dedicated class is kept so future migrate-specific surfaces
+   can diverge without touching /sync — same pattern as /import. */
+.migrate-plan-form {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.migrate-apply-row {
   margin-top: var(--space-4);
   margin-bottom: var(--space-4);
   display: flex;

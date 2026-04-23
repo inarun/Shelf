@@ -71,7 +71,6 @@ func newTestServer(t *testing.T) (*Server, string) {
 		Syncer:      sy,
 		BooksAbs:    books,
 		BackupsRoot: backups,
-		DataDir:     root,
 		Logger:      logger,
 	})
 	if err != nil {

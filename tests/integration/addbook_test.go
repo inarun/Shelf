@@ -96,7 +96,6 @@ func buildServerWithMetadata(t *testing.T, fp *fakeProvider) (string, string, st
 		Covers:      cache,
 		BooksAbs:    books,
 		BackupsRoot: backups,
-		DataDir:     root,
 		Logger:      logger,
 	})
 	if err != nil {

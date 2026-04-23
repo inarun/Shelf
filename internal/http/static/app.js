@@ -1069,15 +1069,16 @@
 
   // initShortcuts wires document-level keyboard shortcuts:
   //   /              — focus the first filter/search input on the page
-  //   g then l|s|a|i|m|r (within 600 ms) — navigate to /library, /series,
-  //                    /add, /import, /migrate, /recommendations
+  //   g then l|s|t|a|i|y|m|r (within 600 ms) — navigate to /library,
+  //                    /series, /stats, /add, /import, /sync, /migrate,
+  //                    /recommendations
   //   ?              — toggle the help overlay
   //   Esc            — close the overlay, or blur the current input
   //
   // Keys are ignored while typing in an input/textarea/select or in a
   // contenteditable element so the shortcuts never fight text entry.
   function initShortcuts() {
-    const NAV_CHORD = { l: "/library", s: "/series", a: "/add", i: "/import", m: "/migrate", r: "/recommendations" };
+    const NAV_CHORD = { l: "/library", s: "/series", t: "/stats", a: "/add", i: "/import", y: "/sync", m: "/migrate", r: "/recommendations" };
     const CHORD_TIMEOUT_MS = 600;
     const overlay = document.getElementById("kbd-help");
     const openBtn = document.getElementById("kbd-help-btn");

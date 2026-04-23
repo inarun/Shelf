@@ -191,7 +191,6 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		RecommenderEnabled:   cfg.Recommender.Enabled,
 		BooksAbs:             booksAbs,
 		BackupsRoot:          backupsRoot,
-		DataDir:              cfg.Data.Directory,
 		Logger:               logger,
 	})
 	if err != nil {

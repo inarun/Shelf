@@ -33,7 +33,6 @@ type Dependencies struct {
 	RecommenderEnabled   bool
 	BooksAbs             string
 	BackupsRoot          string
-	DataDir              string
 	Templates            *template.Template
 	HMACKey              []byte
 	Logger               *slog.Logger

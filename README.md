@@ -4,7 +4,7 @@ Local-first reading journal for Obsidian users. Runs as a single Go binary
 on Windows, keeps your Obsidian vault as the source of truth, and serves a
 lightweight localhost UI for logging reading progress, ratings, and reviews.
 
-**Status:** v0.1 shipped (tag [`v0.1.0`](https://github.com/inarun/Shelf/releases/tag/v0.1.0)) — see [SKILL.md](SKILL.md) for the full spec, priority order (security > lightweight > polish > features), and milestone plan.
+**Status:** v0.3 shipped — Audiobookshelf sync, Trial Review System, and a rule-based recommender are in. See [SKILL.md](SKILL.md) for the full spec, priority order (security > lightweight > polish > features), and milestone plan.
 
 ## Quick start
 

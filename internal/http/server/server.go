@@ -35,7 +35,6 @@ type Dependencies struct {
 	RecommenderEnabled   bool
 	BooksAbs             string
 	BackupsRoot          string
-	DataDir              string
 	Logger               *slog.Logger
 }
 
@@ -73,7 +72,6 @@ func New(deps Dependencies) (*Server, error) {
 		RecommenderEnabled:   deps.RecommenderEnabled,
 		BooksAbs:             deps.BooksAbs,
 		BackupsRoot:          deps.BackupsRoot,
-		DataDir:              deps.DataDir,
 		Templates:            tmpl,
 		HMACKey:              keys.HMAC[:],
 		Logger:               deps.Logger,
