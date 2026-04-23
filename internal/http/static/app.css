@@ -838,6 +838,40 @@ textarea { resize: vertical; }
   border-color: color-mix(in srgb, var(--success) 30%, var(--border));
   color: var(--success);
 }
+.banner.info  {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: var(--accent);
+}
+
+/* ===== Manual-entry add form (Session 23 / v0.3.3) =====
+   Always rendered on /add, regardless of ProviderWired. Provider paths
+   are enhancements; the manual form is the always-available write path. */
+.add-manual {
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.add-manual > h2 {
+  margin-top: 0;
+}
+.add-manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.add-manual-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.add-manual-form__submit {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
 
 /* ===== Toast notifications ===== */
 #toast-region {

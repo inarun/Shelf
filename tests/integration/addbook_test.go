@@ -359,6 +359,102 @@ func TestEndToEnd_ServeCover_InvalidFilename(t *testing.T) {
 	}
 }
 
+// TestEndToEnd_AddBookManualFlow exercises the v0.3.3 S23 manual-entry
+// add-book path. No metadata provider is wired (buildServer passes
+// neither Metadata nor Covers into Dependencies) — the scenario is "the
+// user has openlibrary.enabled=false in shelf.toml". The /add page must
+// render the manual form with no hard-block error banner; POSTing a
+// minimal manual payload must write a canonical note and surface it on
+// /library without a restart.
+func TestEndToEnd_AddBookManualFlow(t *testing.T) {
+	base, books, cleanup := buildServer(t)
+	defer cleanup()
+
+	jar, _ := newCookieJar()
+	client := &http.Client{Jar: jar}
+
+	// 1. GET /add → 200; manual form present; no hard-block banner.
+	resp := doReq(t, client, http.MethodGet, base+"/add", nil, nil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /add status = %d", resp.StatusCode)
+	}
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, `id="add-manual-form"`) {
+		t.Errorf("/add missing manual form; body:\n%s", bodyStr)
+	}
+	if strings.Contains(bodyStr, "Add-book is disabled") {
+		t.Errorf("/add rendered the pre-S23 hard-block banner; body:\n%s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, `class="banner info"`) {
+		t.Errorf("/add missing info-level banner when provider is off; body:\n%s", bodyStr)
+	}
+	csrf := extractCSRF(t, bodyStr)
+
+	// 2. POST /api/add/create with a manual payload.
+	payload := `{"title":"Foundation","authors":["Isaac Asimov"],` +
+		`"isbn":"0553293354","format":"physical","publisher":"Bantam"}`
+	resp = doReq(t, client, http.MethodPost, base+"/api/add/create",
+		strings.NewReader(payload),
+		func(r *http.Request) {
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("X-CSRF-Token", csrf)
+		})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("manual create status = %d body=%s", resp.StatusCode, body)
+	}
+	var createResp struct {
+		OK       bool   `json:"ok"`
+		Filename string `json:"filename"`
+		URL      string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &createResp); err != nil {
+		t.Fatalf("decode create response: %v body=%s", err, body)
+	}
+	if !createResp.OK {
+		t.Errorf("create response ok = false")
+	}
+	if createResp.Filename != "Foundation by Isaac Asimov.md" {
+		t.Errorf("filename = %q", createResp.Filename)
+	}
+	if createResp.URL != "/books/Foundation by Isaac Asimov.md" {
+		t.Errorf("url = %q", createResp.URL)
+	}
+
+	// 3. Disk verification: frontmatter round-trips.
+	noteBytes, err := os.ReadFile(filepath.Join(books, createResp.Filename))
+	if err != nil {
+		t.Fatalf("read new note: %v", err)
+	}
+	note := string(noteBytes)
+	for _, want := range []string{
+		"Foundation",
+		"Isaac Asimov",
+		"0553293354",
+		"physical",
+		"Bantam",
+		"unread",
+	} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note missing %q; content:\n%s", want, note)
+		}
+	}
+
+	// 4. GET /library → the new book is indexed and visible.
+	resp = doReq(t, client, http.MethodGet, base+"/library", nil, nil)
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("library status = %d", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), "Foundation") {
+		t.Errorf("library page missing Foundation after manual add; body:\n%s", body)
+	}
+}
+
 // Ensure the provider interface is satisfied at compile time.
 var _ metadata.Provider = (*fakeProvider)(nil)
 var _ = errors.New

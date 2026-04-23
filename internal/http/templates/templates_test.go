@@ -1324,3 +1324,121 @@ func TestFormatRatingTrimsZeros(t *testing.T) {
 	}
 }
 
+// addPageData returns a minimal data map for executing the "add"
+// template with a configurable ProviderWired flag.
+func addPageData(providerWired bool) map[string]any {
+	return map[string]any{
+		"CSRFToken": "t", "RequestID": "r", "ActiveNav": "add",
+		"ProviderWired": providerWired,
+	}
+}
+
+// TestAddPageRendersManualFormAlways is the v0.3.3 S23 regression guard
+// against re-introducing a ProviderWired-gated hard block on /add. The
+// manual form must be present whether the provider is wired or not.
+func TestAddPageRendersManualFormAlways(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wired := range []bool{true, false} {
+		var buf bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&buf, "add", addPageData(wired)); err != nil {
+			t.Fatalf("execute add wired=%v: %v", wired, err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, `id="add-manual-form"`) {
+			t.Errorf("wired=%v: manual form missing; body:\n%s", wired, out)
+		}
+		for _, want := range []string{
+			`id="add-manual-title"`,
+			`id="add-manual-authors"`,
+			`id="add-manual-format"`,
+			`name="title"`,
+			`name="authors"`,
+			`name="format"`,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("wired=%v: manual form missing %q", wired, want)
+			}
+		}
+	}
+}
+
+// TestAddPageHidesProviderFormsWhenDisabled asserts the ISBN-lookup and
+// title-search forms are omitted when ProviderWired is false — those
+// forms depend on a wired metadata.Provider.
+func TestAddPageHidesProviderFormsWhenDisabled(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "add", addPageData(false)); err != nil {
+		t.Fatalf("execute add: %v", err)
+	}
+	out := buf.String()
+	for _, forbidden := range []string{
+		`id="isbn-form"`,
+		`id="search-form"`,
+		`id="add-results"`,
+		`id="isbn-input"`,
+		`id="query-input"`,
+	} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("provider form element %q leaked with ProviderWired=false; body:\n%s", forbidden, out)
+		}
+	}
+}
+
+// TestAddPageShowsInfoBannerWhenProviderDisabled asserts the page uses
+// a .banner.info (not .banner.error) to explain the disabled state.
+// S23 downgraded the prior hard-block error banner.
+func TestAddPageShowsInfoBannerWhenProviderDisabled(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "add", addPageData(false)); err != nil {
+		t.Fatalf("execute add: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `class="banner info"`) {
+		t.Errorf("expected .banner.info when ProviderWired=false; body:\n%s", out)
+	}
+	if strings.Contains(out, "Add-book is disabled") {
+		t.Errorf("legacy hard-block copy must not reappear; body:\n%s", out)
+	}
+	if strings.Contains(out, `class="banner error"`) {
+		t.Errorf("ProviderWired=false must not render .banner.error (was the pre-S23 hard block); body:\n%s", out)
+	}
+}
+
+// TestAddPageShowsBothFormsWhenProviderEnabled asserts that with a
+// wired provider both the manual form AND the provider forms render,
+// and no info/disabled banner is emitted.
+func TestAddPageShowsBothFormsWhenProviderEnabled(t *testing.T) {
+	tmpl, err := Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "add", addPageData(true)); err != nil {
+		t.Fatalf("execute add: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="add-manual-form"`,
+		`id="isbn-form"`,
+		`id="search-form"`,
+		`id="add-results"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ProviderWired=true: missing %q; body:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `class="banner info"`) {
+		t.Errorf("info banner must not render when ProviderWired=true; body:\n%s", out)
+	}
+}

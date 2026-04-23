@@ -9,9 +9,70 @@
   {{template "nav" .}}
   <main id="main" data-page="add">
     <h1>Add a book</h1>
+
     {{if not .ProviderWired}}
-      <div class="banner error">The Open Library provider is not configured. Add-book is disabled.</div>
-    {{else}}
+      <div class="banner info">Open Library provider is not enabled. Use the manual form below, or enable it in <code>shelf.toml</code> under <code>[providers.openlibrary]</code>.</div>
+    {{end}}
+
+    <section class="add-manual">
+      <h2>Add manually</h2>
+      <form id="add-manual-form" class="add-manual-form">
+        <div class="add-manual-form__row">
+          <label for="add-manual-title">Title <span aria-hidden="true">*</span></label>
+          <input id="add-manual-title" type="text" name="title" autocomplete="off" maxlength="512" required>
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-subtitle">Subtitle</label>
+          <input id="add-manual-subtitle" type="text" name="subtitle" autocomplete="off" maxlength="512">
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-authors">Authors <span aria-hidden="true">*</span></label>
+          <input id="add-manual-authors" type="text" name="authors" autocomplete="off" maxlength="512" placeholder="e.g. Isaac Asimov, Robert Silverberg" required>
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-isbn">ISBN</label>
+          <input id="add-manual-isbn" type="text" name="isbn" autocomplete="off" inputmode="numeric" pattern="[0-9Xx\- ]{10,17}">
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-format">Format</label>
+          <select id="add-manual-format" name="format">
+            <option value="">(unspecified)</option>
+            <option value="audiobook">Audiobook</option>
+            <option value="ebook">Ebook</option>
+            <option value="physical">Physical</option>
+          </select>
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-publisher">Publisher</label>
+          <input id="add-manual-publisher" type="text" name="publisher" autocomplete="off" maxlength="256">
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-publish-date">Publish date</label>
+          <input id="add-manual-publish-date" type="text" name="publish_date" autocomplete="off" maxlength="32" placeholder="YYYY or YYYY-MM-DD">
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-total-pages">Total pages</label>
+          <input id="add-manual-total-pages" type="number" name="total_pages" min="0" step="1" autocomplete="off">
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-series">Series</label>
+          <input id="add-manual-series" type="text" name="series" autocomplete="off" maxlength="256">
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-series-index">Series index</label>
+          <input id="add-manual-series-index" type="number" name="series_index" min="0" step="0.1" autocomplete="off">
+        </div>
+        <div class="add-manual-form__row">
+          <label for="add-manual-categories">Categories</label>
+          <input id="add-manual-categories" type="text" name="categories" autocomplete="off" maxlength="512" placeholder="comma-separated">
+        </div>
+        <div class="add-manual-form__submit">
+          <button type="submit" class="primary">Add book</button>
+        </div>
+      </form>
+    </section>
+
+    {{if .ProviderWired}}
     <p class="muted">Lookup by ISBN or search by title/author. Previewed data comes from Open Library; nothing is written until you click <em>Add this book</em>. Covers are downloaded only when you preview a result.</p>
 
     <section class="add-section">

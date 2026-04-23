@@ -806,6 +806,11 @@
   // Add-book page: ISBN + search → preview cards → Add.
   function initAddPage() {
     if (!document.querySelector('main[data-page="add"]')) return;
+    // The manual-entry form is always present (v0.3.3 S23) regardless of
+    // whether a metadata provider is wired. Provider forms below are
+    // rendered only when ProviderWired is true; initAddManual no-ops when
+    // its form is absent so callers don't need to branch.
+    initAddManual();
     const isbnForm = document.getElementById("isbn-form");
     const searchForm = document.getElementById("search-form");
     const host = document.getElementById("add-results");
@@ -849,6 +854,53 @@
         renderSearchResults(host, resp.data.results || []);
       });
     }
+  }
+
+  // Manual-entry add flow (v0.3.3 S23): works with zero providers wired.
+  // Reuses the provider flow's submitCreate path so 409/400/500 handling
+  // and success redirect stay in sync. cover: "" in the payload skips
+  // resolveCover entirely.
+  function initAddManual() {
+    const form = document.getElementById("add-manual-form");
+    if (!form) return;
+    const section = form.closest(".add-manual") || form;
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const val = (name) => {
+        const el = form.querySelector('[name="' + name + '"]');
+        return el ? el.value : "";
+      };
+      const splitCSV = (s) => s.split(",").map((v) => v.trim()).filter(Boolean);
+      const title = val("title").trim();
+      const authors = splitCSV(val("authors"));
+      if (!title || authors.length === 0) {
+        showBanner(section, "error", "Title and at least one author are required.");
+        return;
+      }
+      const payload = {
+        title,
+        subtitle: val("subtitle").trim(),
+        authors,
+        isbn: val("isbn").trim(),
+        format: val("format").trim(),
+        publisher: val("publisher").trim(),
+        publish_date: val("publish_date").trim(),
+        series: val("series").trim(),
+        categories: splitCSV(val("categories")),
+        cover: "",
+      };
+      const totalPagesRaw = val("total_pages").trim();
+      if (totalPagesRaw !== "") {
+        const n = parseInt(totalPagesRaw, 10);
+        if (!Number.isNaN(n)) payload.total_pages = n;
+      }
+      const seriesIndexRaw = val("series_index").trim();
+      if (seriesIndexRaw !== "") {
+        const n = parseFloat(seriesIndexRaw);
+        if (!Number.isNaN(n)) payload.series_index = n;
+      }
+      await submitCreate(payload, section);
+    });
   }
 
   async function resolveCover(ref) {
