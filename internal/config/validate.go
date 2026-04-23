@@ -43,6 +43,7 @@ func (c *Config) Validate() error {
 	validateData(c, ve)
 	validateServer(c, ve)
 	validateProviders(c, ve)
+	validateRecommender(c, ve)
 
 	if len(ve.Errors) > 0 {
 		return ve
@@ -141,6 +142,35 @@ func validateProviders(c *Config, ve *ValidationError) {
 			ve.pushf("providers.audiobookshelf.cache_ttl_minutes %d must be >= 1 when enabled",
 				c.Providers.Audiobookshelf.CacheTTLMinutes)
 		}
+	}
+}
+
+// allowedLLMModels is the startup allowlist of Anthropic model IDs
+// this build will send requests to. Adding one is a spec change, not
+// a config change (SKILL.md §Conventions for Claude Code). The lists
+// are hardcoded to prevent a typo or deprecated model reaching the
+// wire.
+var allowedLLMModels = map[string]bool{
+	"claude-sonnet-4-6": true,
+	"claude-opus-4-7":   true,
+	"claude-haiku-4-5":  true,
+}
+
+func validateRecommender(c *Config, ve *ValidationError) {
+	if !c.Recommender.LLM.Enabled {
+		return
+	}
+	if strings.TrimSpace(c.Recommender.LLM.APIKey) == "" {
+		ve.push("recommender.llm.api_key is required when enabled")
+	}
+	m := strings.TrimSpace(c.Recommender.LLM.Model)
+	if m == "" {
+		ve.push("recommender.llm.model is required when enabled")
+	} else if !allowedLLMModels[m] {
+		ve.pushf(
+			"recommender.llm.model %q is not in the allowlist (allowed: claude-sonnet-4-6, claude-opus-4-7, claude-haiku-4-5)",
+			m,
+		)
 	}
 }
 

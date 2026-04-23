@@ -14,6 +14,7 @@ import (
 	"github.com/inarun/Shelf/internal/index/sync"
 	"github.com/inarun/Shelf/internal/providers/metadata"
 	"github.com/inarun/Shelf/internal/providers/reading/audiobookshelf"
+	"github.com/inarun/Shelf/internal/recommender/llm"
 )
 
 // Dependencies bundles the collaborators every handler needs. Wired
@@ -30,6 +31,7 @@ type Dependencies struct {
 	Metadata             metadata.Provider
 	Covers               *covers.Cache
 	AudiobookshelfClient *audiobookshelf.Client
+	LLMClient            *llm.Client
 	RecommenderEnabled   bool
 	BooksAbs             string
 	BackupsRoot          string

@@ -17,6 +17,7 @@ import (
 	"github.com/inarun/Shelf/internal/index/sync"
 	"github.com/inarun/Shelf/internal/providers/metadata"
 	"github.com/inarun/Shelf/internal/providers/reading/audiobookshelf"
+	"github.com/inarun/Shelf/internal/recommender/llm"
 
 	"net/http"
 )
@@ -32,6 +33,7 @@ type Dependencies struct {
 	Metadata             metadata.Provider
 	Covers               *covers.Cache
 	AudiobookshelfClient *audiobookshelf.Client
+	LLMClient            *llm.Client
 	RecommenderEnabled   bool
 	BooksAbs             string
 	BackupsRoot          string
@@ -74,6 +76,7 @@ func New(deps Dependencies) (*Server, error) {
 		Metadata:             deps.Metadata,
 		Covers:               deps.Covers,
 		AudiobookshelfClient: deps.AudiobookshelfClient,
+		LLMClient:            deps.LLMClient,
 		RecommenderEnabled:   deps.RecommenderEnabled,
 		BooksAbs:             deps.BooksAbs,
 		BackupsRoot:          deps.BackupsRoot,

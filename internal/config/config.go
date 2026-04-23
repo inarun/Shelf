@@ -58,13 +58,26 @@ type AudiobookshelfConfig struct {
 	CacheTTLMinutes int    `toml:"cache_ttl_minutes"`
 }
 
-// RecommenderConfig controls the rule-based recommender (v0.3). Enabled
-// is false by default so the debug endpoint /api/recommendations/profile
-// returns 503 for users who have not opted in. The scorers themselves
-// land in Session 18 and are gated on the same flag; the v0.3 UI arrives
-// in Session 19. Purely a local computation — no outbound HTTP.
+// RecommenderConfig controls the rule-based recommender (v0.3) and
+// its optional LLM-tuned side-channel (v0.4, Sessions 22–24). Enabled
+// gates the rule-based recommender end-to-end; LLM is a separate
+// nested opt-in for the Anthropic tuner. Neither initiates traffic
+// unless the user explicitly enables and (for LLM) explicitly clicks
+// "Tune" in the UI.
 type RecommenderConfig struct {
-	Enabled bool `toml:"enabled"`
+	Enabled bool      `toml:"enabled"`
+	LLM     LLMConfig `toml:"llm"`
+}
+
+// LLMConfig controls the opt-in Anthropic LLM tuner (SKILL.md §v0.4).
+// Enabled is false by default; APIKey is BYO and MUST NOT be checked
+// into source control; Model must be one of the allowlisted Claude
+// model IDs enforced in validateRecommender. Adding a new model ID is
+// a spec change per SKILL.md §Conventions.
+type LLMConfig struct {
+	Enabled bool   `toml:"enabled"`
+	APIKey  string `toml:"api_key"`
+	Model   string `toml:"model"`
 }
 
 // BooksAbsolutePath joins Vault.Path and Vault.BooksFolder into an absolute

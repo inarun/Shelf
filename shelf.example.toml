@@ -56,3 +56,22 @@ cache_ttl_minutes = 15
 # Flip to `true` to peek at the taste profile Shelf derives from your
 # library.
 enabled = false
+
+[recommender.llm]
+# Opt-in to the LLM-tuned recommender (v0.4). When `enabled = true`,
+# the "Tune" button on /recommendations (Session 24) sends your rated
+# review text + metadata to the Anthropic API using your own key —
+# once, on explicit click. SKILL.md §Core Invariant #8: no phone-home
+# by default; this switch does not initiate any traffic on its own.
+#
+# Security:
+#   - api_key is BYO and MUST NOT be checked into source control.
+#   - model must be one of the allowlisted Claude IDs (sonnet-4-6,
+#     opus-4-7, haiku-4-5). Adding a new ID is a spec change
+#     (SKILL.md §Conventions), not a config change.
+#   - Every outbound call enforces a 30s timeout, 512 KiB response
+#     cap, application/json content-type allowlist, and same-host
+#     redirect policy.
+enabled = false
+api_key = ""
+model   = "claude-haiku-4-5"

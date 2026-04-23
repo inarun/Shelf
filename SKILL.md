@@ -2,7 +2,7 @@
 
 **Authoritative spec for the Shelf project.** Load this file at the start of every Claude Code session. Every architectural decision, filename, schema, and rule in this document is binding. If a user request contradicts this document, raise the contradiction and ask before proceeding.
 
-Last updated: 2026-04-22 (v0.3 shipped 2026-04-19 — rule-based recommender delivered across Sessions 17–19: `internal/domain/series.Detect`, `internal/recommender/profile.Build/Extract` with recency decay and `ShelfAxisMeans`, six `internal/recommender/rules` scorers (`SeriesCompletion`, `AuthorAffinity`, `ShelfSimilarity`, `LengthMatch`, `GenreMatch`, `AxisMatch`) composed via `Rank` with `DefaultWeights`, SSR `/recommendations` page with per-card "Why?" disclosure, `g r` keyboard chord, `sw.js` cache bumped `shelf-v9 → shelf-v10`. v0.3.1 (Session 20, 2026-04-22) is a pure-cleanup point release: the originally planned v0.4 reader-sync milestone was dropped from the roadmap; its enum entry in `internal/domain/precedence`, the precedence test covering it, and comments in precedence/mapper/pages/doc referring to it were all scrubbed; remaining milestones renumbered v0.5 → v0.4 (LLM recommender), v0.6 → v0.5 (Hardcover metadata), v0.7 → v0.6 (Mobile/Tailscale). v0.3.2 (Session 21, 2026-04-22) adds a web-UI shutdown affordance: `POST /api/shutdown` handler with CSRF + `net.IP.IsLoopback()` belt-and-suspenders, a nav **Quit** button that opens a native `<dialog>` confirm, a `/healthz`-polling stopped state, `icon-power` sprite (13th symbol), `sw.js` bumped `shelf-v10 → shelf-v11`. Tray Quit and SIGINT paths unchanged — the three triggers are now peer mechanisms.)
+Last updated: 2026-04-22 (v0.3 shipped 2026-04-19 — rule-based recommender delivered across Sessions 17–19: `internal/domain/series.Detect`, `internal/recommender/profile.Build/Extract` with recency decay and `ShelfAxisMeans`, six `internal/recommender/rules` scorers (`SeriesCompletion`, `AuthorAffinity`, `ShelfSimilarity`, `LengthMatch`, `GenreMatch`, `AxisMatch`) composed via `Rank` with `DefaultWeights`, SSR `/recommendations` page with per-card "Why?" disclosure, `g r` keyboard chord, `sw.js` cache bumped `shelf-v9 → shelf-v10`. v0.3.1 (Session 20, 2026-04-22) is a pure-cleanup point release: the originally planned v0.4 reader-sync milestone was dropped from the roadmap; its enum entry in `internal/domain/precedence`, the precedence test covering it, and comments in precedence/mapper/pages/doc referring to it were all scrubbed; remaining milestones renumbered v0.5 → v0.4 (LLM recommender), v0.6 → v0.5 (Hardcover metadata), v0.7 → v0.6 (Mobile/Tailscale). v0.3.2 (Session 21, 2026-04-22) adds a web-UI shutdown affordance: `POST /api/shutdown` handler with CSRF + `net.IP.IsLoopback()` belt-and-suspenders, a nav **Quit** button that opens a native `<dialog>` confirm, a `/healthz`-polling stopped state, `icon-power` sprite (13th symbol), `sw.js` bumped `shelf-v10 → shelf-v11`. Tray Quit and SIGINT paths unchanged — the three triggers are now peer mechanisms. v0.4 open (Session 22, 2026-04-22): `internal/recommender/llm/` scaffolding — Anthropic HTTP client with 30s timeout + 512 KiB cap + `x-api-key` auth + same-host redirect ≤3 hops, `TunedWeights` persistence layer (`{data.directory}/recommender/tuned.json`, atomic write, `0o600`), `[recommender.llm]` config section with startup model allowlist (`claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5`). No HTTP surface this session; S23 consumes `LLMClient` for `POST /api/recommendations/tune`, S24 wires the UI + closes v0.4. No `sw.js` bump.)
 
 ---
 
@@ -32,6 +32,8 @@ These cannot be violated without explicit user approval in conversation:
 6. **Dry-run before any bulk write.** Any operation that will modify more than one file must produce a preview and wait for explicit confirmation before writing.
 7. **Pre-bulk-write backup.** Before any bulk write (the Goodreads importer, future mass migrations), snapshot the entire Books folder to a timestamped backup directory.
 8. **No external calls without user action.** The app never "phones home." Metadata lookups happen only when the user explicitly adds a book or requests enrichment. No telemetry. Ever.
+
+   > **2026-04-22 (Session 22 — v0.4):** The LLM-enhanced recommender extends this invariant to opt-in Anthropic API calls. `[recommender.llm].enabled = false` is the default; even with `enabled = true` no traffic flows until the user explicitly clicks **Tune with LLM** on `/recommendations` (Session 24). The startup model allowlist in `internal/config.validateRecommender` (currently `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5`) is the first defence against a typo or deprecated ID reaching the wire — adding a new model is a spec change, not a config change (§Conventions for Claude Code).
 
 ## Tech stack
 
@@ -658,9 +660,65 @@ Cinematography/Worldbuilding: 5
 
 **Session 21 landed 2026-04-22.** The `POST /api/shutdown` handler joins the existing `cmd/shelf/main.go` select loop as a third peer trigger (SIGINT/SIGTERM, tray Quit, web-UI). `cmd/shelf/main.go` constructs a buffered(1) `shutdownCh chan struct{}` and threads a send-only view (`chan<- struct{}`) through `httpserver.Dependencies` → `handlers.Dependencies`. The main select grew a fourth branch (`case <-shutdownCh: logger.Info("web-ui shutdown requested")`) between `httpErrCh` and `ctx.Done()`; the subsequent `cancel()` + `httpSrv.Shutdown(10s)` + `tray.Stop()` sequence is unchanged. New `internal/http/handlers/shutdown.go` defines `func (d *Dependencies) Shutdown(w, r)`: POST-only (405 `"invalid"` otherwise); loopback assertion via `net.SplitHostPort(r.RemoteAddr)` + `net.ParseIP(host).IsLoopback()` (403 `"forbidden"` otherwise — covers 127.0.0.0/8 and `::1` per RFC 6890); response is 202 Accepted + `{"status":"shutting_down"}` flushed **before** the channel send so the client sees the ack even if `main.go` tears the server down immediately; duplicate clicks are idempotent via `select { case ch <- struct{}{}: default: }`. CSRF stays global (middleware), not per-handler — `TestShutdown_RequiresCSRF` exercises the full chain end-to-end. **Design decisions:** (1) native `<dialog>` over the `role="dialog"` DIV used for `#kbd-help` — Escape-to-cancel and focus-trap come free from the platform, `showModal()` paints the `::backdrop` automatically; (2) 202 + Flush before channel send, not 200 — the semantics are "accepted for async processing" and the explicit flush keeps the browser's confirmation visible even mid-teardown; (3) `net.IP.IsLoopback()` rather than a literal `127.0.0.1` / `::1` string match — forward-compatible if a future bind ever includes `::1` or any other 127/8 address, and the test `TestShutdown_NonLoopback127_2Accepted` documents the deliberate 127/8 breadth so a future tightening is a conscious spec change; (4) buffered(1) channel + select-default — idempotent under rapid double-submit, no goroutine pool needed. Route: `mux.HandleFunc("POST /api/shutdown", h.Shutdown)` appended after `/api/recommendations` in [routes.go](internal/http/server/routes.go). UI: `_sprite.html` gains `icon-power` (24×24, currentColor, classic arc+vertical-stroke glyph — **13th sprite symbol**). `_shared.html` gains a `<button type="button" id="quit-btn" class="secondary nav-quit" data-shutdown>` in the nav cluster next to `#kbd-help-btn`, plus a new `shutdownOverlay` partial with the `<dialog id="shutdown-confirm">` (title + description + `data-shutdown-error` live region + Cancel/Quit actions) and a full-viewport `<div id="shutdown-complete" hidden role="status" aria-live="polite">` that takes over after 202. `app.js` gains `initShutdown()` registered in the `DOMContentLoaded` bootstrap; it wires the button to `dialog.showModal()`, posts `/api/shutdown` via the existing `api()` helper (CSRF auto-injected), flips the complete overlay on success, and polls `/healthz` every 1s with 500ms `AbortController` timeouts for up to 10s — when the probe fails (expected), the message updates to confirmed-stopped. `app.css` adds `.nav-quit`, `.shutdown-dialog` + `::backdrop` + `__error` + `__actions`, and `.shutdown-complete` + `__icon`/`__title`/`__message` — all token-driven, zero inline styles. `sw.js` `CACHE_VERSION` bumped `shelf-v10 → shelf-v11`. `internal/tray/tray.go` package comment cross-references the three peer shutdown triggers (doc-only; no behavioural tray change, which justifies `tray` in the commit area). Regression guards (12 new, all green): handlers — `TestShutdown_Returns405OnGet`, `TestShutdown_NonLoopbackRemote_Rejected`, `TestShutdown_MalformedRemoteAddr_Rejected`, `TestShutdown_IPv4LoopbackAllowed`, `TestShutdown_IPv6LoopbackAllowed`, `TestShutdown_NonLoopback127_2Accepted`, `TestShutdown_HappyPath_SignalsShutdownChannel`, `TestShutdown_DuplicateRequestsAreIdempotent`, `TestShutdown_NilChannel_StillReturns202`; server integration — `TestShutdown_RequiresCSRF`; templates — `TestSpriteHasIconPowerSymbol`, `TestSharedNavHasShutdownButton`. All four security lints (`go vet`, staticcheck 0.7.0, gosec, govulncheck) clean; `cmd/a11y-check` passes. **Pre-session housekeeping** landed as a standalone commit at `8069ce4` before S21: dropped an unused `DataDir` field threaded through both `Dependencies` structs + four test builders; pruned 5 unused sprite icons (`icon-book`, `icon-refresh`, `icon-chevron-right`, `icon-check`, `icon-spinner`); extended `NAV_CHORD` with `t: "/stats"` + `y: "/sync"` plus matching `#kbd-help` rows; introduced `TestHelpOverlayListsAllNavChords` as a regression guard against future chord-vs-help drift; renamed a stale `sync-apply-row` → `migrate-apply-row` class on `/migrate`; and bumped the README status line to v0.3.
 
-### v0.4 — LLM-enhanced recommender (future)
+### v0.4 — LLM-enhanced recommender (open 2026-04-22; Sessions 22, 23, 24)
 
-Opt-in, bring-your-own-Anthropic-API-key. Lives in `recommender/llm`. Never called unless user explicitly triggers it. Configured in its own TOML section. Composes with the rule-based scorer, not replacing it — specifically, tunes the six scorer weights and axis-derived preference targets from v0.3 S18. Sends review text and metadata only; never telemetry.
+> **2026-04-22:** Roadmap expanded from the renumbered one-line stub into a three-session arc mirroring v0.2 and v0.3 cadence. Opt-in, bring-your-own Anthropic API key. Composes with the rule-based scorer from v0.3 S18, not replacing it — tunes the six scorer weights + axis preference targets from rated review text. Sends only user-provided text + structured metadata; no telemetry.
+
+**Goals.** Land a safe-by-default Anthropic HTTP client (S22 ✓), the tune algorithm + `/api/recommendations/tune` endpoint (S23), and the `/recommendations` "Tune with LLM" UI + `g t` chord (S24). At the end of the arc, a user with a valid API key can click one button to re-rank their recommendations based on their own review prose; the default behaviour of everyone else is byte-for-byte identical to v0.3.
+
+**Non-goals for v0.4.** No offline/local model; no alternative LLM providers in this arc (Anthropic only); no continuous-training or scheduled tune; no per-user prompt customisation; no streaming responses; no function-calling / tool use; no cross-device tune sync (the `tuned.json` artifact stays in `{data.directory}/recommender/` and is scoped to that install).
+
+**Config shape.**
+
+```toml
+[recommender.llm]
+enabled = false
+api_key = ""
+model   = "claude-haiku-4-5"
+```
+
+Model must be one of `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` — enforced at `config.Validate`. Adding a new ID is a spec change (§Conventions for Claude Code), not a config change.
+
+**Security posture** (enforced in `internal/recommender/llm/client.go`).
+
+- 30s request timeout per call (longer than other providers — LLM responses take real time).
+- 512 KiB response body cap via `io.LimitReader(resp.Body, jsonMaxBytes+1)` + length check.
+- `application/json` content-type allowlist (prefix match; accepts `; charset=utf-8`).
+- Same-host redirect policy, ≤3 hops. Any cross-host redirect or chain overflow is rejected.
+- Anthropic-native auth: `x-api-key: <key>` + `anthropic-version: 2023-06-01` headers. The key never appears in logs, error strings, or URL fragments — error formatting uses the `redactedURL` helper (query + fragment stripped).
+- `#nosec G107` on the `http.NewRequestWithContext` call site is the only gosec suppression and mirrors the identical pattern in `internal/providers/reading/audiobookshelf`. The URL is built from trusted `BaseURL` + compile-time path constants; no user input reaches the request construction.
+
+**Prompt versioning.** S23 ships a `PromptVersion` constant (targeted value: `2026-04-v1`). `TunedWeights.PromptVersion` records the version that produced a given artifact so future sessions can invalidate stale tunings gracefully (a mismatch logs a warning and falls back to `DefaultWeights`).
+
+**`tuned.json` schema.** Path: `{data.directory}/recommender/tuned.json`. Written 0o600 via `internal/vault/atomic.Write`. S22 defines the shape; S23 populates it.
+
+```json
+{
+  "schema_version": 1,
+  "tuned_at": "2026-04-22T12:00:00Z",
+  "prompt_version": "2026-04-v1",
+  "model": "claude-haiku-4-5",
+  "weights": {
+    "SeriesCompletion": 1.3,
+    "AuthorAffinity": 1.1,
+    "ShelfSimilarity": 0.9,
+    "LengthMatch": 0.5,
+    "GenreMatch": 0.7,
+    "AxisMatch": 1.2
+  },
+  "axis_targets": {
+    "emotional_impact": 4.5,
+    "characters": 4.7,
+    "plot": 4.2,
+    "dialogue_prose": 4.0,
+    "cinematography_worldbuilding": 4.6
+  }
+}
+```
+
+`Load(dataDir) (*TunedWeights, error)` returns `(nil, nil)` when the file is absent (fresh install, no tuning yet). Corrupt JSON surfaces as an error; S23's ranker logs a warning and falls back to `DefaultWeights`.
+
+**Session 22 landed 2026-04-22** — scaffolding only; no HTTP surface. New package `internal/recommender/llm/` with `doc.go`, `config.go`, `client.go`, `auth.go`, `persistence.go`, `client_test.go`, `persistence_test.go`, and `testdata/models.json`. `Client` constructor validates APIKey + Model (trimmed-non-empty), parses the BaseURL (defaults to `https://api.anthropic.com`; accepts http for tests), enforces the http/https scheme allowlist, and installs a `CheckRedirect` closure that caps hops at 3 and rejects cross-host redirects. Single method `Ping(ctx) error` calls `GET /v1/models` (zero-token health check); `doJSON` is the private transport helper exercising every security primitive. `Credentials.injectAuth(req)` sets the two Anthropic headers; leaves the request untouched when APIKey is empty (mirrors `audiobookshelf` shape). `TunedWeights` + `Load` + `Save` live in `persistence.go`; `Save` atomic-writes via `internal/vault/atomic.Write` at `0o600`. `internal/config/config.go` grew `LLMConfig` inside `RecommenderConfig`; `internal/config/validate.go` grew `validateRecommender` + the `allowedLLMModels` map; `shelf.example.toml` grew a `[recommender.llm]` block. `cmd/shelf/main.go` mkdirs `{data.directory}/recommender/` alongside `backups/` and `covers/`, constructs a nilable `*llm.Client` based on `cfg.Recommender.LLM.Enabled`, and threads it through `httpserver.Dependencies` → `handlers.Dependencies`; no handler consumes the field this session (S23 will). Regression guards: client — `TestNew_RequiresAPIKey`, `TestNew_RequiresModel`, `TestNew_DefaultsBaseURLToAnthropic`, `TestNew_RejectsInvalidScheme`, `TestNew_AcceptsHTTP`, `TestNew_AcceptsHTTPS`, `TestModel_ReturnsConfigured`, `TestPing_ParsesModelsFixture`, `TestPing_EnforcesContentType`, `TestPing_EnforcesSizeCap`, `TestPing_RejectsNon2xx`, `TestPing_RejectsCrossHostRedirect`, `TestPing_RejectsRedirectChain`, `TestPing_HonorsContextTimeout`, `TestInjectAuth_SetsXAPIKeyHeader` (regression guard against blind copy-paste from audiobookshelf's Bearer pattern), `TestInjectAuth_SetsAnthropicVersionHeader`, `TestInjectAuth_NoHeaderForEmptyKey`, `TestRedactedURL_StripsQueryAndFragment`, `TestRedactedURL_NilIsEmptyString`; persistence — `TestSave_Load_RoundTrip`, `TestLoad_ReturnsNilWhenFileAbsent`, `TestLoad_ReturnsErrorOnCorruptJSON`, `TestSave_AtomicReplace`, `TestSave_FilePerms0600` (skipped on Windows), `TestSave_NilReturnsError`, `TestSave_EmitsParseableJSON`; config — `TestValidate_RecommenderLLMDisabledIsNoOp`, `TestValidate_RecommenderLLMEnabledRequiresAPIKey`, `TestValidate_RecommenderLLMEnabledRequiresModel`, `TestValidate_RecommenderLLMModelMustBeAllowlisted`, `TestValidate_RecommenderLLMAcceptsEveryAllowedModel`. Every error-path client test ends with `assertKeyNotInError(t, err)` — the test key `test-key-do-not-log-0123456789` must never leak into error strings. All four security lints (`go vet`, staticcheck 0.7.0, gosec, govulncheck) clean; no sw.js bump (no static-asset or template changes); no `cmd/a11y-check` run (no CSS tokens changed). **S23 consumes `LLMClient` for the tune endpoint + pipeline; S24 wires the UI + closes v0.4.**
 
 ### v0.5 — Hardcover metadata provider (future)
 
@@ -679,6 +737,7 @@ Requires: Host header validation extended to allow Tailscale addresses; PWA layo
 - **Every new dependency** requires a justification comment and a check against known CVEs.
 - **Every security-sensitive change** requires hostile test cases before merge.
 - **Destructive endpoints** (shutdown, delete-all, bulk-wipe) must require CSRF **and** a loopback remote-IP check — `net.IP.IsLoopback()` on the host half of `r.RemoteAddr`. Host middleware alone is insufficient once its allowlist can be widened (v0.6 Tailscale will widen it). Belt-and-suspenders. Added 2026-04-22 (Session 21).
+- **Anthropic model IDs are allowlisted at startup.** Current set: `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` — enforced in `internal/config.validateRecommender` via the `allowedLLMModels` map. Adding a new ID is a spec change (not a config change): it requires a SKILL.md edit naming the new ID *and* a `validateRecommender` map update *and* an `internal/recommender/llm/client.go` review for any model-specific behaviour. Rationale: prevents a typo or deprecated model reaching the wire, and keeps the supported surface visible in one place. Added 2026-04-22 (Session 22).
 - **Never write to the real vault from tests or from development builds.** Development config points to a synthetic vault under `tests/fixtures/`.
 - **Small commits, clear messages.** Commit message format: `{area}: {what changed} — {why}`. Example: `vault/paths: reject reserved Windows names — prevents creating inaccessible files`.
 - **Windows is the primary target.** Code runs on Windows in production. Cross-platform concerns (macOS/Linux) are secondary and handled via build tags.

@@ -187,6 +187,53 @@ func TestValidate_OpenLibraryEnabledNegativeTTL(t *testing.T) {
 	assertValidationError(t, c.Validate(), "cache_ttl_days")
 }
 
+func TestValidate_RecommenderLLMDisabledIsNoOp(t *testing.T) {
+	c := baseValid(t)
+	// Enabled=false ⇒ no field validation. Garbage values must not block.
+	c.Recommender.LLM.Enabled = false
+	c.Recommender.LLM.APIKey = ""
+	c.Recommender.LLM.Model = "anything-goes"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("want no error when LLM disabled; got %v", err)
+	}
+}
+
+func TestValidate_RecommenderLLMEnabledRequiresAPIKey(t *testing.T) {
+	c := baseValid(t)
+	c.Recommender.LLM.Enabled = true
+	c.Recommender.LLM.APIKey = ""
+	c.Recommender.LLM.Model = "claude-haiku-4-5"
+	assertValidationError(t, c.Validate(), "api_key")
+}
+
+func TestValidate_RecommenderLLMEnabledRequiresModel(t *testing.T) {
+	c := baseValid(t)
+	c.Recommender.LLM.Enabled = true
+	c.Recommender.LLM.APIKey = "k"
+	c.Recommender.LLM.Model = ""
+	assertValidationError(t, c.Validate(), "model is required")
+}
+
+func TestValidate_RecommenderLLMModelMustBeAllowlisted(t *testing.T) {
+	c := baseValid(t)
+	c.Recommender.LLM.Enabled = true
+	c.Recommender.LLM.APIKey = "k"
+	c.Recommender.LLM.Model = "claude-flarp-9-9"
+	assertValidationError(t, c.Validate(), "allowlist")
+}
+
+func TestValidate_RecommenderLLMAcceptsEveryAllowedModel(t *testing.T) {
+	for _, m := range []string{"claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"} {
+		c := baseValid(t)
+		c.Recommender.LLM.Enabled = true
+		c.Recommender.LLM.APIKey = "k"
+		c.Recommender.LLM.Model = m
+		if err := c.Validate(); err != nil {
+			t.Errorf("model %q: want no error; got %v", m, err)
+		}
+	}
+}
+
 func TestValidate_ExternalBindIsNotError(t *testing.T) {
 	c := baseValid(t)
 	c.Server.Bind = "0.0.0.0"

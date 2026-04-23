@@ -36,6 +36,7 @@ import (
 	"github.com/inarun/Shelf/internal/providers/metadata"
 	"github.com/inarun/Shelf/internal/providers/metadata/openlibrary"
 	"github.com/inarun/Shelf/internal/providers/reading/audiobookshelf"
+	"github.com/inarun/Shelf/internal/recommender/llm"
 	"github.com/inarun/Shelf/internal/tray"
 	"github.com/inarun/Shelf/internal/vault/watcher"
 )
@@ -104,10 +105,14 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 	booksAbs := cfg.BooksAbsolutePath()
 	backupsRoot := filepath.Join(cfg.Data.Directory, "backups")
 	coversRoot := filepath.Join(cfg.Data.Directory, "covers")
+	recommenderRoot := filepath.Join(cfg.Data.Directory, "recommender")
 	dbPath := filepath.Join(cfg.Data.Directory, "shelf.db")
 
 	if err := os.MkdirAll(backupsRoot, 0o700); err != nil {
 		return fmt.Errorf("create backups dir: %w", err)
+	}
+	if err := os.MkdirAll(recommenderRoot, 0o700); err != nil {
+		return fmt.Errorf("create recommender dir: %w", err)
 	}
 
 	coverCache, err := covers.New(coversRoot)
@@ -158,6 +163,30 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		logger.Info("audiobookshelf provider disabled via config; sync unavailable")
 	}
 
+	// LLM-enhanced recommender side-channel (SKILL.md §v0.4). Gated on
+	// recommender.llm.enabled — a nil client means S23's
+	// /api/recommendations/tune endpoint returns 503 and
+	// rankRecommendations falls back to rules.DefaultWeights. Per
+	// Core Invariant #8, no outbound call happens here; traffic only
+	// flows when the user explicitly clicks "Tune with LLM" in the UI
+	// (Session 24).
+	var llmClient *llm.Client
+	if cfg.Recommender.LLM.Enabled {
+		c, err := llm.New(llm.Config{
+			APIKey: cfg.Recommender.LLM.APIKey,
+			Model:  cfg.Recommender.LLM.Model,
+		})
+		if err != nil {
+			return fmt.Errorf("llm client init: %w", err)
+		}
+		llmClient = c
+		logger.Info("llm recommender provider configured",
+			"model", cfg.Recommender.LLM.Model,
+		)
+	} else {
+		logger.Info("llm recommender disabled via config; tuning unavailable")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -194,6 +223,7 @@ func run(cfg *config.Config, logger *slog.Logger, logPath, configFlag string) er
 		Metadata:             olClient,
 		Covers:               coverCache,
 		AudiobookshelfClient: abClient,
+		LLMClient:            llmClient,
 		RecommenderEnabled:   cfg.Recommender.Enabled,
 		BooksAbs:             booksAbs,
 		BackupsRoot:          backupsRoot,
