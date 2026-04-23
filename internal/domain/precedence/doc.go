@@ -1,5 +1,5 @@
 // Package precedence resolves which source wins for a given field value
-// when multiple sources (vault, Goodreads, Audiobookshelf, Kavita, metadata
+// when multiple sources (vault, Goodreads, Audiobookshelf, metadata
 // provider) disagree or supply partial data. See SKILL.md §Data precedence
 // for the authoritative ordering.
 //

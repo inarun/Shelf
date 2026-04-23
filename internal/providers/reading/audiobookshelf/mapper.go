@@ -16,7 +16,7 @@ import (
 // (see internal/providers/reading/goodreads/match.go). Duplicated here
 // rather than imported because goodreads owns its own private resolver
 // shape; lifting a shared matcher to internal/providers/reading/matching
-// is scheduled for v0.4 (Kavita) when a third consumer lands.
+// is deferred until a third consumer lands.
 const (
 	fuzzyAutoMatch = 0.92
 	fuzzyConflict  = 0.80

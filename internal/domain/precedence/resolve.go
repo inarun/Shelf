@@ -4,7 +4,7 @@ import "reflect"
 
 // Source identifies where a candidate value came from. Ordering (highest
 // first): vault frontmatter > vault body > Goodreads > Audiobookshelf >
-// Kavita > metadata. See SKILL.md §Data precedence.
+// metadata. See SKILL.md §Data precedence.
 type Source int
 
 const (
@@ -13,7 +13,6 @@ const (
 	SourceVaultBody
 	SourceGoodreads
 	SourceAudiobookshelf
-	SourceKavita
 	SourceMetadata
 )
 
@@ -28,8 +27,6 @@ func (s Source) String() string {
 		return "goodreads"
 	case SourceAudiobookshelf:
 		return "audiobookshelf"
-	case SourceKavita:
-		return "kavita"
 	case SourceMetadata:
 		return "metadata"
 	default:
@@ -44,7 +41,6 @@ var sourcePriority = map[Source]int{
 	SourceVaultBody:        50,
 	SourceGoodreads:        40,
 	SourceAudiobookshelf:   30,
-	SourceKavita:           20,
 	SourceMetadata:         10,
 	SourceUnknown:          0,
 }

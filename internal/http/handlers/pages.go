@@ -133,7 +133,7 @@ type TimelineEntry struct {
 	// on the book-detail timeline. "" = vault-origin (no badge);
 	// "audiobookshelf" = a Session-13 sync that stamped
 	// "## Reading Timeline" body lines with "(Audiobookshelf)".
-	// Extend as new reading-source providers land (Kavita, etc.).
+	// Extend as new reading-source providers land.
 	Source string
 }
 

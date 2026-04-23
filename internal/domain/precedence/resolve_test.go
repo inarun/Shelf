@@ -54,16 +54,6 @@ func TestResolve_GoodreadsBeatsMetadata(t *testing.T) {
 	}
 }
 
-func TestResolve_AudiobookshelfBeatsKavita(t *testing.T) {
-	got, ok := Resolve([]Candidate{
-		{Source: SourceKavita, Value: "k"},
-		{Source: SourceAudiobookshelf, Value: "ab"},
-	})
-	if !ok || got.Source != SourceAudiobookshelf {
-		t.Errorf("Source=%s, want audiobookshelf", got.Source)
-	}
-}
-
 func TestResolveWith_StatusUnreadIsGap(t *testing.T) {
 	got, ok := ResolveWith([]Candidate{
 		{Source: SourceVaultFrontmatter, Value: "unread"},
@@ -154,7 +144,6 @@ func TestPriority_Ordering(t *testing.T) {
 		SourceVaultBody,
 		SourceGoodreads,
 		SourceAudiobookshelf,
-		SourceKavita,
 		SourceMetadata,
 		SourceUnknown,
 	}
@@ -173,7 +162,6 @@ func TestSource_String(t *testing.T) {
 		SourceVaultBody:        "vault_body",
 		SourceGoodreads:        "goodreads",
 		SourceAudiobookshelf:   "audiobookshelf",
-		SourceKavita:           "kavita",
 		SourceMetadata:         "metadata",
 		SourceUnknown:          "unknown",
 	}
